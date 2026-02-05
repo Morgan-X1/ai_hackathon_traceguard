@@ -1,0 +1,6 @@
+drive/
+.config/
+sample_data/
+*.csv
+*.pdf
+*.docx
