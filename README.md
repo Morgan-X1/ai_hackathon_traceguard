@@ -1,4 +1,4 @@
-# 🛡️ TraceGuard AI
+# TraceGuard AI
 
 **Anti-Money Laundering Dashboard with XGBoost + GNN + Network Analysis**
 
@@ -6,33 +6,33 @@ An intelligent transaction monitoring system for detecting money laundering patt
 
 ---
 
-## 🎯 Features
+## Features
 
-### 🤖 **Dual-Model AI System**
+### **Dual-Model AI System**
 - **XGBoost Model**: Transaction-level risk analysis with 16 engineered features
 - **GraphSAGE GNN**: Graph neural network for relational pattern detection
 - **Ensemble Predictions**: Combines both models with network factor boosting
 
-### 🔗 **Advanced Network Analysis**
+### **Advanced Network Analysis**
 - **Mule Detection**: Identifies accounts receiving from multiple sources (2.5x risk multiplier)
 - **Velocity Checks**: Flags rapid transactions under 1 hour (3.0x risk multiplier)
 - **Structuring Detection**: Automatic flagging of transactions near $10k threshold
 - **Graph Centrality**: PageRank and clustering coefficient analysis
 
-### 📊 **Interactive Visualizations**
+### **Interactive Visualizations**
 - **Cytoscape.js Network Maps**: Interactive transaction graphs with zoom/pan
 - **Relational Highlighting**: Hover to see connected transactions
 - **Connection Tooltips**: Shows linked transactions with amounts
 - **Risk Heatmaps**: Color-coded nodes based on centrality scores
 
-### 🧠 **Explainable AI**
+### **Explainable AI**
 - **Reasoning Column**: Plain-English explanations for each flagging
 - **Model Breakdown Tooltips**: Hover to see XGBoost, GNN, and network scores
 - **Logic Rules**: Transparent decision-making process
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 ```bash
@@ -65,7 +65,7 @@ http://127.0.0.1:8000
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 TraceGuard/
@@ -87,7 +87,7 @@ TraceGuard/
 
 ---
 
-## 💡 How It Works
+## How It Works
 
 ### 1. **Feature Engineering**
 Extracts 16 features from raw transaction data:
@@ -123,14 +123,14 @@ final_score = xgb_score * network_factor
 
 ### 5. **Risk Categorization**
 ```python
-if final_score > 40: "🚨 CRITICAL"
-elif final_score > 15: "⚠️ ELEVATED"
-else: "✅ LOW"
+if final_score > 40: "CRITICAL"
+elif final_score > 15: "ELEVATED"
+else: "LOW"
 ```
 
 ---
 
-## 📊 Sample CSV Format
+## Sample CSV Format
 
 ```csv
 Account,Account.1,Timestamp,Amount Received,Receiving Currency,Amount Paid,Payment Currency,Payment Format
@@ -142,7 +142,7 @@ ACCT_789,ACCT_999,2024-01-15,125.50,USD,125.50,USD,ACH
 
 ---
 
-## 🎨 Key Technologies
+## Key Technologies
 
 | Technology | Purpose |
 |------------|---------|
@@ -157,37 +157,37 @@ ACCT_789,ACCT_999,2024-01-15,125.50,USD,125.50,USD,ACH
 
 ---
 
-## 🔍 Detection Capabilities
+## Detection Capabilities
 
 ### Structuring Detection
 ```
 Transaction: $9,500
-Reasoning: 🎯 Potential Structuring: Near $10k limit
+Reasoning: Potential Structuring: Near $10k limit
 ```
 
 ### Mule Account Detection
 ```
 Transaction: Account 9999AAAA receives from 3+ unique senders
-Reasoning: 👥 Mule Pattern: Multiple senders to same receiver
+Reasoning: Mule Pattern: Multiple senders to same receiver
 Network Factor: 2.5x
 ```
 
 ### Velocity Pattern
 ```
 Transaction: Same accounts transact twice in 30 minutes
-Reasoning: ⚡ Velocity Alert: Rapid transactions detected (<1 hour)
+Reasoning: Velocity Alert: Rapid transactions detected (<1 hour)
 Network Factor: 3.0x
 ```
 
 ### Relational Risk
 ```
 Transaction: $125.50 (low amount) but connected to high-risk network
-Reasoning: 🔗 Relational Risk: Linked to suspicious account network
+Reasoning: Relational Risk: Linked to suspicious account network
 ```
 
 ---
 
-## 📸 Screenshots
+## Screenshots
 
 ### Main Dashboard
 - Upload CSV/JSON files for batch analysis
@@ -208,7 +208,7 @@ Reasoning: 🔗 Relational Risk: Linked to suspicious account network
 
 ---
 
-## 🧪 Testing
+## Testing
 
 Use the included sample files:
 ```bash
@@ -231,7 +231,7 @@ Or paste JSON directly:
 
 ---
 
-## 🛠️ Configuration
+## Configuration
 
 ### Model Location
 XGBoost model: `traceguard_milestone2_final.json`
@@ -243,7 +243,7 @@ XGBoost model: `traceguard_milestone2_final.json`
 
 ---
 
-## 🎓 Educational Context
+## Educational Context
 
 Built for **IT 4th Year Final Project / AI Hackathon**
 
@@ -256,13 +256,13 @@ Built for **IT 4th Year Final Project / AI Hackathon**
 
 ---
 
-## 📜 License
+## License
 
 Educational project - MIT License
 
 ---
 
-## 👨‍💻 Author
+## Author
 
 **Morgan-X1**
 
@@ -270,7 +270,7 @@ GitHub: [@Morgan-X1](https://github.com/Morgan-X1)
 
 ---
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - XGBoost library for gradient boosting
 - PyTorch Geometric for GNN implementation
@@ -279,7 +279,7 @@ GitHub: [@Morgan-X1](https://github.com/Morgan-X1)
 
 ---
 
-## 📞 Support
+## Support
 
 For issues or questions:
 1. Open an issue on GitHub
@@ -288,4 +288,4 @@ For issues or questions:
 
 ---
 
-**⭐ Star this repo if you find it useful!**
+**Star this repo if you find it useful!**
