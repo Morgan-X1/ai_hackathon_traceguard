@@ -1,0 +1,392 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard - TraceGuard AI{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="mb-4">
+            <i class="bi bi-shield-shaded"></i> AML Risk Assessment Dashboard
+        </h1>
+    </div>
+</div>
+
+<!-- Messages -->
+{% if messages %}
+    {% for message in messages %}
+    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+        {% if message.tags == 'success' %}
+            <i class="bi bi-check-circle-fill"></i>
+        {% elif message.tags == 'warning' %}
+            <i class="bi bi-exclamation-triangle-fill"></i>
+        {% elif message.tags == 'error' %}
+            <i class="bi bi-x-circle-fill"></i>
+        {% endif %}
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+{% endif %}
+
+<div class="row">
+    <!-- Transaction Form -->
+    <div class="col-lg-{% if show_results %}6{% else %}8{% endif %} mx-auto">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">
+                    <i class="bi bi-pencil-square"></i> Transaction Analysis Form
+                </h4>
+            </div>
+            <div class="card-body">
+                <form method="post" id="transactionForm">
+                    {% csrf_token %}
+                    
+                    <!-- Transaction Details Section -->
+                    <h5 class="mb-3 text-primary">
+                        <i class="bi bi-cash-stack"></i> Transaction Details
+                    </h5>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="id_Amount" class="form-label">{{ form.Amount.label }}</label>
+                            {{ form.Amount }}
+                            <div class="form-text">{{ form.Amount.help_text }}</div>
+                            {% if form.Amount.errors %}
+                                <div class="text-danger">{{ form.Amount.errors }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="id_Tx_Type" class="form-label">{{ form.Tx_Type.label }}</label>
+                            {{ form.Tx_Type }}
+                            <div class="form-text">{{ form.Tx_Type.help_text }}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="id_Sender_ID" class="form-label">{{ form.Sender_ID.label }}</label>
+                            {{ form.Sender_ID }}
+                            <div class="form-text">{{ form.Sender_ID.help_text }}</div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="id_Receiver_ID" class="form-label">{{ form.Receiver_ID.label }}</label>
+                            {{ form.Receiver_ID }}
+                            <div class="form-text">{{ form.Receiver_ID.help_text }}</div>
+                        </div>
+                    </div>
+                    
+                    <hr class="my-4">
+                    
+                    <!-- Location & Device Section -->
+                    <h5 class="mb-3 text-primary">
+                        <i class="bi bi-geo-alt"></i> Location & Device
+                    </h5>
+                    
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label for="id_Location" class="form-label">{{ form.Location.label }}</label>
+                            {{ form.Location }}
+                            <div class="form-text">{{ form.Location.help_text }}</div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="id_Device_ID" class="form-label">{{ form.Device_ID.label }}</label>
+                            {{ form.Device_ID }}
+                            <div class="form-text">{{ form.Device_ID.help_text }}</div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="id_IP_Prefix" class="form-label">{{ form.IP_Prefix.label }}</label>
+                            {{ form.IP_Prefix }}
+                            <div class="form-text">{{ form.IP_Prefix.help_text }}</div>
+                        </div>
+                    </div>
+                    
+                    <hr class="my-4">
+                    
+                    <!-- Risk Indicators Section -->
+                    <h5 class="mb-3 text-warning">
+                        <i class="bi bi-exclamation-triangle"></i> Risk Indicators
+                    </h5>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="id_Is_High_Risk_Country" class="form-label">{{ form.Is_High_Risk_Country.label }}</label>
+                            {{ form.Is_High_Risk_Country }}
+                            <div class="form-text">{{ form.Is_High_Risk_Country.help_text }}</div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="id_Is_Proxy" class="form-label">{{ form.Is_Proxy.label }}</label>
+                            {{ form.Is_Proxy }}
+                            <div class="form-text">{{ form.Is_Proxy.help_text }}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="id_Is_Round_Amount" class="form-label">{{ form.Is_Round_Amount.label }}</label>
+                            {{ form.Is_Round_Amount }}
+                            <div class="form-text">{{ form.Is_Round_Amount.help_text }}</div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="id_Is_Structuring_Risk" class="form-label">
+                                {{ form.Is_Structuring_Risk.label }}
+                                <i class="bi bi-info-circle" data-bs-toggle="tooltip" 
+                                   title="Transactions near $10,000 may indicate structuring to avoid reporting"></i>
+                            </label>
+                            {{ form.Is_Structuring_Risk }}
+                            <div class="form-text">{{ form.Is_Structuring_Risk.help_text }}</div>
+                        </div>
+                    </div>
+                    
+                    <hr class="my-4">
+                    
+                    <!-- Behavioral Features Section -->
+                    <h5 class="mb-3 text-info">
+                        <i class="bi bi-graph-up"></i> Behavioral Features
+                    </h5>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="id_Transaction_Frequency" class="form-label">{{ form.Transaction_Frequency.label }}</label>
+                            {{ form.Transaction_Frequency }}
+                            <div class="form-text">{{ form.Transaction_Frequency.help_text }}</div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="id_Avg_Transaction_Amount" class="form-label">{{ form.Avg_Transaction_Amount.label }}</label>
+                            {{ form.Avg_Transaction_Amount }}
+                            <div class="form-text">{{ form.Avg_Transaction_Amount.help_text }}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="id_Time_Since_Last_Tx" class="form-label">{{ form.Time_Since_Last_Tx.label }}</label>
+                            {{ form.Time_Since_Last_Tx }}
+                            <div class="form-text">{{ form.Time_Since_Last_Tx.help_text }}</div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="id_Sender_Receiver_Relationship" class="form-label">{{ form.Sender_Receiver_Relationship.label }}</label>
+                            {{ form.Sender_Receiver_Relationship }}
+                            <div class="form-text">{{ form.Sender_Receiver_Relationship.help_text }}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="id_Account_Age_Days" class="form-label">{{ form.Account_Age_Days.label }}</label>
+                            {{ form.Account_Age_Days }}
+                            <div class="form-text">{{ form.Account_Age_Days.help_text }}</div>
+                        </div>
+                    </div>
+                    
+                    <hr class="my-4">
+                    
+                    <div class="text-center">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="bi bi-calculator"></i> Analyze Risk
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Risk Assessment Results -->
+    {% if show_results and prediction %}
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">
+                    <i class="bi bi-graph-up-arrow"></i> Risk Assessment Results
+                </h4>
+            </div>
+            <div class="card-body">
+                <!-- Risk Gauge -->
+                <div class="risk-gauge-container">
+                    <canvas id="riskGauge"></canvas>
+                    <div class="risk-score-display">
+                        <div class="risk-score-value" id="riskScoreValue" 
+                             style="color: {% if prediction.risk_color == 'green' %}var(--accent-green){% elif prediction.risk_color == 'amber' %}var(--accent-amber){% else %}var(--accent-red){% endif %};">
+                            {{ prediction.risk_score }}
+                        </div>
+                        <div class="risk-score-label">/ 100</div>
+                    </div>
+                </div>
+                
+                <div class="text-center mb-4">
+                    <span class="risk-level-badge risk-{% if prediction.risk_level == 'Low' %}low{% elif prediction.risk_level == 'Medium' %}medium{% else %}high{% endif %}">
+                        {% if prediction.risk_level == 'Low' %}
+                            <i class="bi bi-check-circle"></i> LOW RISK
+                        {% elif prediction.risk_level == 'Medium' %}
+                            <i class="bi bi-exclamation-circle"></i> MEDIUM RISK
+                        {% else %}
+                            <i class="bi bi-x-circle"></i> HIGH RISK
+                        {% endif %}
+                    </span>
+                </div>
+                
+                <!-- Structuring Risk Alert -->
+                {% if prediction.is_structuring_risk %}
+                <div class="structuring-alert structuring-warning">
+                    <h5 class="mb-2">
+                        <i class="bi bi-exclamation-triangle-fill"></i> Structuring Risk Detected
+                    </h5>
+                    <p class="mb-0">
+                        This transaction amount (${{ prediction.amount|floatformat:2 }}) is near the $10,000 threshold.
+                        This may indicate an attempt to avoid currency transaction reporting requirements.
+                    </p>
+                </div>
+                {% endif %}
+                
+                <!-- Statistics -->
+                <h5 class="mb-3 mt-4">Transaction Summary</h5>
+                
+                <div class="stats-card">
+                    <div class="stats-label">Transaction Amount</div>
+                    <div class="stats-value">${{ prediction.amount|floatformat:2 }}</div>
+                </div>
+                
+                <div class="stats-card">
+                    <div class="stats-label">Risk Level</div>
+                    <div class="stats-value">{{ prediction.risk_level }}</div>
+                </div>
+                
+                <div class="stats-card">
+                    <div class="stats-label">Risk Score</div>
+                    <div class="stats-value">{{ prediction.risk_score }}/100</div>
+                </div>
+                
+                <!-- Feature Highlights -->
+                <h5 class="mb-3 mt-4">Key Risk Factors</h5>
+                <div>
+                    {% if prediction.features.Is_High_Risk_Country == 1 %}
+                    <span class="feature-badge">
+                        <i class="bi bi-globe"></i> High Risk Country
+                    </span>
+                    {% endif %}
+                    
+                    {% if prediction.features.Is_Proxy == 1 %}
+                    <span class="feature-badge">
+                        <i class="bi bi-shield-exclamation"></i> Proxy/VPN Used
+                    </span>
+                    {% endif %}
+                    
+                    {% if prediction.is_structuring_risk %}
+                    <span class="feature-badge" style="border-color: var(--accent-amber); color: var(--accent-amber);">
+                        <i class="bi bi-currency-dollar"></i> Structuring Risk
+                    </span>
+                    {% endif %}
+                    
+                    {% if prediction.features.Is_Round_Amount == 1 %}
+                    <span class="feature-badge">
+                        <i class="bi bi-calculator"></i> Round Amount
+                    </span>
+                    {% endif %}
+                    
+                    {% if prediction.features.Transaction_Frequency > 10 %}
+                    <span class="feature-badge">
+                        <i class="bi bi-arrow-repeat"></i> High Frequency
+                    </span>
+                    {% endif %}
+                </div>
+                
+                <div class="text-center mt-4">
+                    <a href="{% url 'dashboard' %}" class="btn btn-outline-light">
+                        <i class="bi bi-arrow-clockwise"></i> New Analysis
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Initialize tooltips
+var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+    return new bootstrap.Tooltip(tooltipTriggerEl)
+});
+
+// Auto-detect structuring risk
+document.getElementById('id_Amount').addEventListener('input', function(e) {
+    const amount = parseFloat(e.target.value);
+    const structuringSelect = document.getElementById('id_Is_Structuring_Risk');
+    
+    if (amount >= 9000 && amount <= 10500) {
+        // Highlight the structuring risk field
+        structuringSelect.parentElement.style.background = 'rgba(255, 193, 7, 0.1)';
+        structuringSelect.parentElement.style.borderRadius = '8px';
+        structuringSelect.parentElement.style.padding = '8px';
+    } else {
+        structuringSelect.parentElement.style.background = '';
+        structuringSelect.parentElement.style.padding = '';
+    }
+});
+
+{% if show_results and prediction %}
+// Create Risk Gauge using Chart.js
+const ctx = document.getElementById('riskGauge').getContext('2d');
+const riskScore = {{ prediction.risk_score }};
+
+// Determine color based on risk score
+let gaugeColor;
+if (riskScore < 10) {
+    gaugeColor = '#00d084'; // Green
+} else if (riskScore < 40) {
+    gaugeColor = '#ffc107'; // Amber
+} else {
+    gaugeColor = '#dc3545'; // Red
+}
+
+const data = {
+    datasets: [{
+        data: [riskScore, 100 - riskScore],
+        backgroundColor: [
+            gaugeColor,
+            'rgba(255, 255, 255, 0.05)'
+        ],
+        borderWidth: 0,
+        circumference: 180,
+        rotation: 270
+    }]
+};
+
+const config = {
+    type: 'doughnut',
+    data: data,
+    options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: {
+            legend: {
+                display: false
+            },
+            tooltip: {
+                enabled: false
+            }
+        },
+        cutout: '75%'
+    }
+};
+
+new Chart(ctx, config);
+
+// Animate the risk score
+const scoreElement = document.getElementById('riskScoreValue');
+let currentScore = 0;
+const targetScore = riskScore;
+const increment = targetScore / 50;
+
+const animateScore = setInterval(() => {
+    currentScore += increment;
+    if (currentScore >= targetScore) {
+        currentScore = targetScore;
+        clearInterval(animateScore);
+    }
+    scoreElement.textContent = currentScore.toFixed(1);
+}, 20);
+{% endif %}
+</script>
+{% endblock %}

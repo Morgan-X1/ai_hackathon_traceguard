@@ -1,0 +1,19 @@
+# TraceGuard AI - Language Detection Configuration
+
+# Mark Python files
+*.py linguist-language=Python
+
+# Mark HTML templates
+*.html linguist-language=HTML
+
+# Exclude JSON model files from stats
+traceguard_milestone2_final.json linguist-vendored
+traceguard_v1.json linguist-vendored
+
+# Exclude data files
+*.csv linguist-vendored
+temp/* linguist-vendored
+
+# Exclude Python cache
+__pycache__/* linguist-vendored
+*.pyc linguist-vendored

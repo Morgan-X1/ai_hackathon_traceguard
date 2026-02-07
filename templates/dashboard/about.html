@@ -1,0 +1,96 @@
+{% extends 'base.html' %}
+
+{% block title %}About - TraceGuard AI{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="mb-0">
+                    <i class="bi bi-info-circle"></i> About TraceGuard AI
+                </h2>
+            </div>
+            <div class="card-body">
+                <h4>{{ project_name }}</h4>
+                <p class="lead">{{ description }}</p>
+                
+                <hr class="my-4">
+                
+                <h5>Version</h5>
+                <p>{{ version }}</p>
+                
+                <h5 class="mt-4">Key Features</h5>
+                <ul class="list-unstyled">
+                    {% for feature in features %}
+                    <li class="mb-2">
+                        <i class="bi bi-check-circle-fill text-success"></i> {{ feature }}
+                    </li>
+                    {% endfor %}
+                </ul>
+                
+                <hr class="my-4">
+                
+                <h5>Technology Stack</h5>
+                <div class="row mt-3">
+                    <div class="col-md-6">
+                        <div class="stats-card">
+                            <h6><i class="bi bi-server"></i> Backend</h6>
+                            <ul class="list-unstyled mb-0">
+                                <li>Django Framework</li>
+                                <li>XGBoost ML Model</li>
+                                <li>Python 3.x</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="stats-card">
+                            <h6><i class="bi bi-palette"></i> Frontend</h6>
+                            <ul class="list-unstyled mb-0">
+                                <li>Bootstrap 5</li>
+                                <li>Chart.js</li>
+                                <li>Dark Mode UI</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                
+                <hr class="my-4">
+                
+                <h5>16-Feature Risk Model</h5>
+                <p>Our XGBoost model analyzes transactions using the following features:</p>
+                <div class="row">
+                    <div class="col-md-6">
+                        <ul class="small">
+                            <li>Transaction Amount</li>
+                            <li>Sender & Receiver IDs</li>
+                            <li>Transaction Type</li>
+                            <li>Location & Device</li>
+                            <li>IP Prefix</li>
+                            <li>High Risk Country Flag</li>
+                            <li>Proxy/VPN Detection</li>
+                            <li>Transaction Frequency</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <ul class="small">
+                            <li>Average Transaction Amount</li>
+                            <li>Round Amount Flag</li>
+                            <li>Structuring Risk Flag</li>
+                            <li>Time Since Last Transaction</li>
+                            <li>Sender-Receiver Relationship</li>
+                            <li>Account Age</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="text-center mt-4">
+                    <a href="{% url 'dashboard' %}" class="btn btn-primary">
+                        <i class="bi bi-speedometer2"></i> Go to Dashboard
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

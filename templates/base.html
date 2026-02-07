@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}TraceGuard AI{% endblock %}</title>
+    
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    
+    <!-- jQuery (for qTip) -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    
+    <!-- qTip2 for tooltips -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/qtip2/3.0.3/jquery.qtip.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qtip2/3.0.3/jquery.qtip.min.js"></script>
+    
+    <!-- Cytoscape.js extensions for qTip -->
+    <script src="https://cdn.jsdelivr.net/npm/cytoscape-qtip@2.8.0/cytoscape-qtip.min.js"></script>
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    
+    <!-- Custom CSS -->
+    <style>
+        :root {
+            --bg-primary: #0a0e27;
+            --bg-secondary: #151934;
+            --bg-card: #1a1f3a;
+            --accent-green: #00d084;
+            --accent-amber: #ffc107;
+            --accent-red: #dc3545;
+            --text-primary: #e8eaed;
+            --text-secondary: #9aa0a6;
+            --border-color: #2d3348;
+        }
+        
+        body {
+            background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+            min-height: 100vh;
+            color: var(--text-primary);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        .navbar {
+            background: rgba(26, 31, 58, 0.95) !important;
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .navbar-brand {
+            font-weight: 700;
+            font-size: 1.5rem;
+            background: linear-gradient(135deg, var(--accent-green), #00a8ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 48px rgba(0, 0, 0, 0.4);
+        }
+        
+        .card-header {
+            background: rgba(0, 208, 132, 0.1);
+            border-bottom: 1px solid var(--border-color);
+            font-weight: 600;
+            padding: 1.25rem;
+        }
+        
+        .form-control, .form-select {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            transition: all 0.3s ease;
+        }
+        
+        .form-control:focus, .form-select:focus {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: var(--accent-green);
+            box-shadow: 0 0 0 0.25rem rgba(0, 208, 132, 0.25);
+            color: var(--text-primary);
+        }
+        
+        .form-label {
+            color: var(--text-secondary);
+            font-weight: 500;
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-green), #00a8ff);
+            border: none;
+            font-weight: 600;
+            padding: 0.75rem 2rem;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 208, 132, 0.4);
+        }
+        
+        .alert {
+            border: none;
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .alert-success {
+            background: rgba(0, 208, 132, 0.15);
+            color: var(--accent-green);
+        }
+        
+        .alert-warning {
+            background: rgba(255, 193, 7, 0.15);
+            color: var(--accent-amber);
+        }
+        
+        .alert-danger {
+            background: rgba(220, 53, 69, 0.15);
+            color: var(--accent-red);
+        }
+        
+        .form-text {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+        
+        .structuring-alert {
+            background: rgba(255, 193, 7, 0.2);
+            border-left: 4px solid var(--accent-amber);
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 1rem 0;
+        }
+        
+        .feature-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            background: rgba(0, 208, 132, 0.1);
+            border: 1px solid var(--accent-green);
+            border-radius: 20px;
+            font-size: 0.85rem;
+            margin: 0.25rem;
+        }
+        
+        footer {
+            background: rgba(26, 31, 58, 0.8);
+            border-top: 1px solid var(--border-color);
+            padding: 2rem 0;
+            margin-top: 4rem;
+        }
+        
+        .risk-gauge-container {
+            position: relative;
+            width: 300px;
+            height: 300px;
+            margin: 2rem auto;
+        }
+        
+        .risk-score-display {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+        
+        .risk-score-value {
+            font-size: 3.5rem;
+            font-weight: 700;
+            line-height: 1;
+        }
+        
+        .risk-score-label {
+            font-size: 1.2rem;
+            color: var(--text-secondary);
+            margin-top: 0.5rem;
+        }
+        
+        .risk-level-badge {
+            font-size: 1.1rem;
+            padding: 0.5rem 1.5rem;
+            border-radius: 20px;
+            font-weight: 600;
+            margin-top: 1rem;
+            display: inline-block;
+        }
+        
+        .risk-low {
+            background: rgba(0, 208, 132, 0.2);
+            color: var(--accent-green);
+            border: 2px solid var(--accent-green);
+        }
+        
+        .risk-medium {
+            background: rgba(255, 193, 7, 0.2);
+            color: var(--accent-amber);
+            border: 2px solid var(--accent-amber);
+        }
+        
+        .risk-high {
+            background: rgba(220, 53, 69, 0.2);
+            color: var(--accent-red);
+            border: 2px solid var(--accent-red);
+        }
+        
+        .stats-card {
+            background: rgba(255, 255, 255, 0.03);
+            padding: 1.5rem;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            margin-bottom: 1rem;
+        }
+        
+        .stats-label {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .stats-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        
+        .structuring-warning {
+            animation: pulse 2s infinite;
+        }
+    </style>
+    
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
+        <div class="container">
+            <a class="navbar-brand" href="{% url 'dashboard' %}">
+                <i class="bi bi-shield-check"></i> TraceGuard AI
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'dashboard' %}">
+                            <i class="bi bi-speedometer2"></i> Dashboard
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'batch_analysis' %}">
+                            <i class="bi bi-list-check"></i> Batch Analysis
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'about' %}">
+                            <i class="bi bi-info-circle"></i> About
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="container my-5">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="mt-auto">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                    <h5><i class="bi bi-shield-check"></i> TraceGuard AI</h5>
+                    <p class="text-secondary">Advanced Anti-Money Laundering Risk Assessment</p>
+                </div>
+                <div class="col-md-6 text-md-end">
+                    <p class="text-secondary">
+                        4th Year IT Project &copy; 2026<br>
+                        Powered by XGBoost & Django
+                    </p>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

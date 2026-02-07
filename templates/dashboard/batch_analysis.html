@@ -1,0 +1,1206 @@
+{% extends 'base.html' %}
+
+{% block title %}Batch Analysis - TraceGuard AI{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="mb-4">
+            <i class="bi bi-list-check"></i> Batch Transaction Analysis
+        </h1>
+        <p class="lead">Automatically analyze multiple transactions from CSV or JSON files</p>
+    </div>
+</div>
+
+<!-- Messages -->
+{% if messages %}
+    {% for message in messages %}
+    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+        {% if message.tags == 'success' %}
+            <i class="bi bi-check-circle-fill"></i>
+        {% elif message.tags == 'warning' %}
+            <i class="bi bi-exclamation-triangle-fill"></i>
+        {% elif message.tags == 'error' %}
+            <i class="bi bi-x-circle-fill"></i>
+        {% endif %}
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+{% endif %}
+
+<div class="row">
+    <!-- Upload Section -->
+    <div class="col-lg-{% if summary %}4{% else %}6{% endif %} mx-auto mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">
+                    <i class="bi bi-upload"></i> Upload Transactions
+                </h4>
+            </div>
+            <div class="card-body">
+                <form method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    
+                    <div class="mb-4">
+                        <label for="transaction_file" class="form-label">Upload File (CSV or JSON)</label>
+                        <input type="file" class="form-control" id="transaction_file" name="transaction_file" accept=".csv,.json">
+                        <div class="form-text">Upload a CSV or JSON file with transaction data</div>
+                    </div>
+                    
+                    <div class="text-center mb-3">
+                        <strong>OR</strong>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="transaction_json" class="form-label">Paste JSON Data</label>
+                        <textarea class="form-control" id="transaction_json" name="transaction_json" rows="8" 
+                                  placeholder='[{"Amount": 9500, "Sender_ID": 123, ...}]'></textarea>
+                        <div class="form-text">Paste JSON array of transactions</div>
+                    </div>
+                    
+                    <div class="text-center">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="bi bi-calculator"></i> Analyze Transactions
+                        </button>
+                    </div>
+                </form>
+                
+                <hr class="my-4">
+                
+                <div class="mt-3">
+                    <h6>CSV Format (Minimal):</h6>
+                    <small class="text-success">
+                        <strong>Required:</strong> Amount, Sender, Receiver<br>
+                        <strong>Optional:</strong> All other fields auto-filled with safe defaults
+                    </small>
+                    <hr class="my-2">
+                    <details>
+                        <summary class="text-info" style="cursor: pointer;">
+                            <small>Show all 16 supported features</small>
+                        </summary>
+                        <small class="text-secondary">
+                            Amount, Sender_ID, Receiver_ID, Tx_Type, Location, Device_ID, IP_Prefix, 
+                            Is_High_Risk_Country, Is_Proxy, Transaction_Frequency, Avg_Transaction_Amount, 
+                            Is_Round_Amount, Is_Structuring_Risk, Time_Since_Last_Tx, 
+                            Sender_Receiver_Relationship, Account_Age_Days
+                        </small>
+                    </details>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Results Section -->
+    {% if summary %}
+    <div class="col-lg-8">
+        <!-- Summary Statistics -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h4 class="mb-0">
+                    <i class="bi bi-graph-up"></i> Analysis Summary
+                </h4>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3 mb-3">
+                        <div class="stats-card">
+                            <div class="stats-label">Total Transactions</div>
+                            <div class="stats-value">{{ summary.total_transactions }}</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="stats-card">
+                            <div class="stats-label">Successfully Analyzed</div>
+                            <div class="stats-value text-success">{{ summary.successful_analysis }}</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="stats-card">
+                            <div class="stats-label">Average Risk Score</div>
+                            <div class="stats-value">{{ summary.risk_scores.average|floatformat:1 }}</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="stats-card">
+                            <div class="stats-label">Structuring Detected</div>
+                            <div class="stats-value text-warning">{{ summary.structuring_detected }}</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="stats-card">
+                            <div class="stats-label">Network Boosted</div>
+                            <div class="stats-value text-danger">
+                                {{ summary.network_boosted|default:0 }}
+                                <small class="text-secondary">accounts</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <h5 class="mt-4 mb-3">Risk Distribution</h5>
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="stats-card" style="border-left: 4px solid var(--accent-green);">
+                            <div class="stats-label">✅ Low Risk (&lt;15)</div>
+                            <div class="stats-value text-success">
+                                {{ summary.risk_distribution.low }}
+                                <small class="text-secondary">({{ summary.risk_percentages.low|floatformat:1 }}%)</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="stats-card" style="border-left: 4px solid var(--accent-amber);">
+                            <div class="stats-label">⚠️ Elevated Risk (15-40)</div>
+                            <div class="stats-value text-warning">
+                                {{ summary.risk_distribution.elevated }}
+                                <small class="text-secondary">({{ summary.risk_percentages.elevated|floatformat:1 }}%)</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="stats-card" style="border-left: 4px solid var(--accent-red);">
+                            <div class="stats-label">🚨 Critical Risk (&gt;40)</div>
+                            <div class="stats-value text-danger">
+                                {{ summary.risk_distribution.critical }}
+                                <small class="text-secondary">({{ summary.risk_percentages.critical|floatformat:1 }}%)</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Critical Risk Transactions -->
+        {% if critical_risk %}
+        <div class="card mb-4">
+            <div class="card-header bg-danger bg-opacity-10">
+                <h4 class="mb-0 text-danger">
+                    <i class="bi bi-exclamation-octagon-fill"></i> 🚨 Critical Risk Transactions ({{ critical_risk|length }})
+                </h4>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Amount</th>
+                                <th>Ensemble Score</th>
+                                <th>XGB</th>
+                                <th>GNN</th>
+                                <th>Risk Level</th>
+                                <th>Reasoning</th>
+                                <th>Structuring</th>
+                                <th>Details</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in critical_risk %}
+                            <tr>
+                                <td>{{ item.transaction_id }}</td>
+                                <td>${{ item.risk_assessment.amount|floatformat:2 }}</td>
+                                <td>
+                                    <span class="badge bg-danger">
+                                        {{ item.risk_assessment.risk_score }}
+                                    </span>
+                                </td>
+                                <td><small>{{ item.risk_assessment.xgb_score|default:"-" }}</small></td>
+                                <td><small>{{ item.risk_assessment.gnn_score|default:"-" }}</small></td>
+                                <td>
+                                    <span class="badge bg-danger">
+                                        {{ item.risk_assessment.risk_level }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <small>
+                                        {{ item.risk_assessment.reasoning }}
+                                        <i class="bi bi-info-circle text-info ms-1" 
+                                           data-bs-toggle="tooltip" 
+                                           data-bs-html="true"
+                                           title="<strong>Model Breakdown:</strong><br>
+                                                  XGBoost: {{ item.risk_assessment.xgb_score_base|floatformat:1 }}<br>
+                                                  GNN: {{ item.risk_assessment.gnn_score|floatformat:1 }}<br>
+                                                  Network Factor: {{ item.risk_assessment.network_factor|floatformat:1 }}x<br>
+                                                  Final Score: {{ item.risk_assessment.risk_score|floatformat:1 }}"
+                                           style="cursor: help;">
+                                        </i>
+                                    </small>
+                                </td>
+                                <td>
+                                    {% if item.risk_assessment.is_structuring_risk %}
+                                        <i class="bi bi-exclamation-triangle-fill text-warning"></i>
+                                    {% else %}
+                                        <i class="bi bi-dash-circle text-secondary"></i>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-light" data-bs-toggle="collapse" 
+                                            data-bs-target="#details{{ item.transaction_id }}">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            <tr class="collapse" id="details{{ item.transaction_id }}">
+                                <td colspan="9">
+                                    <div class="p-3" style="background: rgba(0,0,0,0.2); border-radius: 8px;">
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <small>
+                                                    <strong>Sender ID:</strong> {{ item.transaction.Sender_ID }}<br>
+                                                    <strong>Receiver ID:</strong> {{ item.transaction.Receiver_ID }}<br>
+                                                    <strong>Transaction Type:</strong> {{ item.transaction.Tx_Type }}<br>
+                                                    <strong>Location:</strong> {{ item.transaction.Location }}
+                                                </small>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <small>
+                                                    {% if item.transaction.Is_High_Risk_Country == 1 %}
+                                                        <span class="badge bg-warning mb-1">High Risk Country</span><br>
+                                                    {% endif %}
+                                                    {% if item.transaction.Is_Proxy == 1 %}
+                                                        <span class="badge bg-warning mb-1">Proxy/VPN</span><br>
+                                                    {% endif %}
+                                                    {% if item.transaction.Is_Round_Amount == 1 %}
+                                                        <span class="badge bg-info mb-1">Round Amount</span><br>
+                                                    {% endif %}
+                                                    <strong>Frequency:</strong> {{ item.transaction.Transaction_Frequency }}/24h<br>
+                                                    <strong>Account Age:</strong> {{ item.transaction.Account_Age_Days }} days
+                                                </small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        
+        <!-- Elevated Risk Transactions -->
+        {% if elevated_risk %}
+        <div class="card mb-4">
+            <div class="card-header bg-warning bg-opacity-10">
+                <h4 class="mb-0 text-warning">
+                    <i class="bi bi-exclamation-triangle-fill"></i> ⚠️ Elevated Risk Transactions ({{ elevated_risk|length }})
+                </h4>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Amount</th>
+                                <th>Risk Score</th>
+                                <th>Risk Level</th>
+                                <th>Structuring</th>
+                                <th>Details</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in elevated_risk %}
+                            <tr>
+                                <td>{{ item.transaction_id }}</td>
+                                <td>${{ item.risk_assessment.amount|floatformat:2 }}</td>
+                                <td>
+                                    <span class="badge bg-warning">
+                                        {{ item.risk_assessment.risk_score }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="badge bg-warning">
+                                        {{ item.risk_assessment.risk_level }}
+                                    </span>
+                                </td>
+                                <td>
+                                    {% if item.risk_assessment.is_structuring_risk %}
+                                        <i class="bi bi-exclamation-triangle-fill text-warning"></i>
+                                    {% else %}
+                                        <i class="bi bi-dash-circle text-secondary"></i>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-light" data-bs-toggle="collapse" 
+                                            data-bs-target="#elevated-details{{ item.transaction_id }}">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            <tr class="collapse" id="elevated-details{{ item.transaction_id }}">
+                                <td colspan="6">
+                                    <div class="p-3" style="background: rgba(0,0,0,0.2); border-radius: 8px;">
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <small>
+                                                    <strong>Sender ID:</strong> {{ item.transaction.Sender_ID }}<br>
+                                                    <strong>Receiver ID:</strong> {{ item.transaction.Receiver_ID }}<br>
+                                                    <strong>Transaction Type:</strong> {{ item.transaction.Tx_Type }}<br>
+                                                    <strong>Location:</strong> {{ item.transaction.Location }}
+                                                </small>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <small>
+                                                    {% if item.transaction.Is_High_Risk_Country == 1 %}
+                                                        <span class="badge bg-warning mb-1">High Risk Country</span><br>
+                                                    {% endif %}
+                                                    {% if item.transaction.Is_Proxy == 1 %}
+                                                        <span class="badge bg-warning mb-1">Proxy/VPN</span><br>
+                                                    {% endif %}
+                                                    {% if item.transaction.Is_Round_Amount == 1 %}
+                                                        <span class="badge bg-info mb-1">Round Amount</span><br>
+                                                    {% endif %}
+                                                    <strong>Frequency:</strong> {{ item.transaction.Transaction_Frequency }}/24h<br>
+                                                    <strong>Account Age:</strong> {{ item.transaction.Account_Age_Days }} days
+                                                </small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                                <td>
+                                    {% if result.status == 'success' %}
+                                        {% if result.risk_assessment.risk_score < 15 %}
+                                            <span class="badge bg-success">✅ {{ result.risk_assessment.risk_level }}</span>
+                                        {% elif result.risk_assessment.risk_score < 40 %}
+                                            <span class="badge bg-warning">⚠️ {{ result.risk_assessment.risk_level }}</span>
+                                        {% else %}
+                                            <span class="badge bg-danger">🚨 {{ result.risk_assessment.risk_level }}</span>
+                                        {% endif %}
+                                    {% else %}
+                                        <span class="badge bg-secondary">Error</span>
+                                    {% endif %}
+                                </td>warning">
+                    <i class="bi bi-currency-dollar"></i> Structuring Attempts Detected ({{ structuring|length }})
+                </h4>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-warning">
+                    <i class="bi bi-info-circle-fill"></i>
+                    <strong>Structuring Alert:</strong> The following transactions are near the $10,000 threshold 
+                    and may indicate attempts to avoid Currency Transaction Reporting requirements.
+                </div>
+                
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Amount</th>
+                                <th>Risk Score</th>
+                                <th>Network Factor</th>
+                                <th>Reasoning</th>
+                                <th>Sender</th>
+                                <th>Receiver</th>
+                                <th>Details</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in structuring %}
+                            <tr>
+                                <td>{{ item.transaction_id }}</td>
+                                <td class="text-warning">
+                                    <strong>${{ item.risk_assessment.amount|floatformat:2 }}</strong>
+                                </td>
+                                <td>
+                                    <span class="badge {% if item.risk_assessment.risk_score < 40 %}bg-warning{% else %}bg-danger{% endif %}">
+                                        {{ item.risk_assessment.risk_score|floatformat:0 }}
+                                    </span>
+                                    {% if item.risk_assessment.network_factor > 1.0 %}
+                                    <i class="bi bi-diagram-3-fill text-primary ms-1" title="Network-boosted risk"></i>
+                                    <small class="text-danger">(×{{ item.risk_assessment.network_factor|floatformat:1 }})</small>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if item.risk_assessment.network_factor >= 3.0 %}
+                                    <span class="badge bg-danger">
+                                        <i class="bi bi-lightning-fill"></i> {{ item.risk_assessment.network_factor|floatformat:1 }}x
+                                    </span>
+                                    <small class="text-danger d-block">Velocity</small>
+                                    {% elif item.risk_assessment.network_factor >= 2.5 %}
+                                    <span class="badge bg-danger">
+                                        <i class="bi bi-people-fill"></i> {{ item.risk_assessment.network_factor|floatformat:1 }}x
+                                    </span>
+                                    <small class="text-warning d-block">Mule</small>
+                                    {% elif item.risk_assessment.network_factor >= 2.0 %}
+                                    <span class="badge bg-warning">{{ item.risk_assessment.network_factor|floatformat:1 }}x</span>
+                                    {% elif item.risk_assessment.network_factor > 1.0 %}
+                                    <span class="badge bg-info">{{ item.risk_assessment.network_factor|floatformat:1 }}x</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">1.0x</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <small>
+                                        {{ item.risk_assessment.reasoning }}
+                                        <i class="bi bi-info-circle text-info ms-1" 
+                                           data-bs-toggle="tooltip" 
+                                           data-bs-html="true"
+                                           title="<strong>Model Breakdown:</strong><br>
+                                                  XGBoost: {{ item.risk_assessment.xgb_score_base|floatformat:1 }}<br>
+                                                  GNN: {{ item.risk_assessment.gnn_score|floatformat:1 }}<br>
+                                                  Network Factor: {{ item.risk_assessment.network_factor|floatformat:1 }}x<br>
+                                                  Final Score: {{ item.risk_assessment.risk_score|floatformat:1 }}"
+                                           style="cursor: help;">
+                                        </i>
+                                    </small>
+                                </td>
+                                <td>
+                                    <code class="text-info">{{ item.risk_assessment.sender }}</code>
+                                    {% if item.risk_assessment.sender_centrality > 0.5 %}
+                                    <i class="bi bi-diagram-3-fill text-danger" title="High centrality"></i>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <code class="text-success">{{ item.risk_assessment.receiver }}</code>
+                                    {% if item.risk_assessment.receiver_centrality > 0.5 %}
+                                    <i class="bi bi-diagram-3-fill text-danger" title="High centrality"></i>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-info" onclick="showNetworkMap({{ item.transaction_id }})" title="View Network Map">
+                                        <i class="bi bi-diagram-2"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        
+        <!-- All Results Table -->
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">
+                    <i class="bi bi-table"></i> All Transactions ({{ results|length }})
+                </h4>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover table-sm">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Status</th>
+                                <th>Sender → Receiver</th>
+                                <th>Amount</th>
+                                <th>Base Score</th>
+                                <th>Network</th>
+                                <th>Final Risk</th>
+                                <th>Level</th>
+                                <th>Reasoning</th>
+                                <th>Details</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for result in results %}
+                            <tr class="transaction-row" 
+                                data-sender="{{ result.risk_assessment.sender }}" 
+                                data-receiver="{{ result.risk_assessment.receiver }}"
+                                data-tx-id="{{ result.transaction_id }}">
+                                <td>{{ result.transaction_id }}</td>
+                                <td>
+                                    {% if result.status == 'success' %}
+                                        <i class="bi bi-check-circle-fill text-success"></i>
+                                    {% else %}
+                                        <i class="bi bi-x-circle-fill text-danger" title="{{ result.error }}"></i>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if result.status == 'success' %}
+                                        <small>
+                                            <code class="text-info">{{ result.risk_assessment.sender|truncatechars:12 }}</code>
+                                            <i class="bi bi-arrow-right"></i>
+                                            <code class="text-success">{{ result.risk_assessment.receiver|truncatechars:12 }}</code>
+                                        </small>
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if result.status == 'success' %}
+                                        ${{ result.risk_assessment.amount|floatformat:2 }}
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if result.status == 'success' %}
+                                        <small class="text-muted">{{ result.risk_assessment.xgb_score_base|floatformat:0 }}</small>
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if result.status == 'success' %}
+                                        {% if result.risk_assessment.network_factor > 2.0 %}
+                                        <span class="badge bg-danger">×{{ result.risk_assessment.network_factor|floatformat:1 }}</span>
+                                        {% elif result.risk_assessment.network_factor > 1.0 %}
+                                        <span class="badge bg-warning">×{{ result.risk_assessment.network_factor|floatformat:1 }}</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">×1.0</span>
+                                        {% endif %}
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if result.status == 'success' %}
+                                        <strong>{{ result.risk_assessment.risk_score|floatformat:0 }}</strong>
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if result.status == 'success' %}
+                                        {% if result.risk_assessment.network_factor > 1.0 %}
+                                        <span class="badge bg-danger">
+                                            🚨 CRITICAL: Network Link Found
+                                        </span>
+                                        {% else %}
+                                        <span class="badge {% if result.risk_assessment.risk_level == 'Low' or 'LOW' in result.risk_assessment.risk_level %}bg-success{% elif result.risk_assessment.risk_level == 'Medium' or 'ELEVATED' in result.risk_assessment.risk_level %}bg-warning{% else %}bg-danger{% endif %}">
+                                            {{ result.risk_assessment.risk_level }}
+                                        </span>
+                                        {% endif %}
+                                    {% else %}
+                                        <span class="badge bg-secondary">Error</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if result.status == 'success' %}
+                                        <small>
+                                            {{ result.risk_assessment.reasoning }}
+                                            <i class="bi bi-info-circle text-info ms-1" 
+                                               data-bs-toggle="tooltip" 
+                                               data-bs-html="true"
+                                               title="<strong>Model Breakdown:</strong><br>
+                                                      XGBoost: {{ result.risk_assessment.xgb_score_base|floatformat:1 }}<br>
+                                                      GNN: {{ result.risk_assessment.gnn_score|floatformat:1 }}<br>
+                                                      Network Factor: {{ result.risk_assessment.network_factor|floatformat:1 }}x<br>
+                                                      Final Score: {{ result.risk_assessment.risk_score|floatformat:1 }}"
+                                               style="cursor: help;">
+                                            </i>
+                                        </small>
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if result.status == 'success' %}
+                                        <span class="linked-badge" data-tx-id="{{ result.transaction_id }}" style="cursor: help;">
+                                            <i class="bi bi-link-45deg text-info"></i>
+                                        </span>
+                                        <button class="btn btn-sm btn-outline-primary" onclick="showNetworkMap({{ result.transaction_id }})" title="View Network Map">
+                                            <i class="bi bi-diagram-3"></i>
+                                        </button>
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Transaction Network Visualization -->
+{% if graph_data_json %}
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">
+                    <i class="bi bi-diagram-3"></i> Transaction Network Analysis
+                </h4>
+            </div>
+            <div class="card-body">
+                <!-- Network Graph -->
+                <div id="transaction-network" style="height: 600px; border: 1px solid #495057; border-radius: 5px;"></div>
+                
+                <!-- Network Statistics -->
+                {% if graph_data %}
+                <div class="row mt-3">
+                    <div class="col-md-3">
+                        <div class="stat-card">
+                            <h6 class="text-muted mb-1">Total Accounts</h6>
+                            <h3 class="mb-0" id="stat-accounts">{{ graph_data.visualization.nodes|length }}</h3>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card">
+                            <h6 class="text-muted mb-1">Total Transfers</h6>
+                            <h3 class="mb-0" id="stat-transfers">{{ graph_data.visualization.edges|length }}</h3>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card">
+                            <h6 class="text-muted mb-1">Circular Flows</h6>
+                            <h3 class="mb-0 text-danger">{{ graph_data.suspicious_patterns.circular_flow|length }}</h3>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card">
+                            <h6 class="text-muted mb-1">Rapid Movement</h6>
+                            <h3 class="mb-0 text-warning">{{ graph_data.suspicious_patterns.rapid_movement|length }}</h3>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Suspicious Patterns Detail -->
+                {% if graph_data.suspicious_patterns.circular_flow %}
+                <div class="alert alert-danger mt-3">
+                    <h6><i class="bi bi-exclamation-triangle-fill"></i> Circular Flow Patterns Detected</h6>
+                    <p class="mb-0">{{ graph_data.suspicious_patterns.circular_flow|length }} potential money laundering ring(s) found with circular transaction flows.</p>
+                </div>
+                {% endif %}
+                
+                {% if graph_data.suspicious_patterns.rapid_movement %}
+                <div class="alert alert-warning mt-3">
+                    <h6><i class="bi bi-lightning-fill"></i> Rapid Money Movement</h6>
+                    <p class="mb-0">{{ graph_data.suspicious_patterns.rapid_movement|length }} account(s) showing rapid transaction velocity (potential layering).</p>
+                </div>
+                {% endif %}
+                
+                {% if graph_data.suspicious_patterns.structuring %}
+                <div class="alert alert-info mt-3">
+                    <h6><i class="bi bi-layers-fill"></i> Structuring Patterns</h6>
+                    <p class="mb-0">{{ graph_data.suspicious_patterns.structuring|length }} account(s) showing structuring behavior (multiple small transactions).</p>
+                </div>
+                {% endif %}
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .stat-card {
+        padding: 15px;
+        background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+        border-radius: 8px;
+        text-align: center;
+    }
+</style>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const graphData = JSON.parse('{{ graph_data_json|escapejs }}');
+    
+    // Transform to Cytoscape format
+    const elements = [];
+    
+    // Add nodes
+    graphData.nodes.forEach(node => {
+        elements.push({
+            data: {
+                id: node.id.toString(),
+                label: node.label,
+                risk_score: node.risk_score,
+                size: node.size
+            }
+        });
+    });
+    
+    // Add edges
+    graphData.edges.forEach(edge => {
+        elements.push({
+            data: {
+                id: `edge-${edge.source}-${edge.target}`,
+                source: edge.source.toString(),
+                target: edge.target.toString(),
+                weight: edge.weight,
+                amount: edge.amount
+            }
+        });
+    });
+    
+    // Initialize Cytoscape
+    const cy = cytoscape({
+        container: document.getElementById('transaction-network'),
+        elements: elements,
+        style: [
+            {
+                selector: 'node',
+                style: {
+                    'background-color': function(ele) {
+                        const risk = ele.data('risk_score');
+                        if (risk > 70) return '#dc3545';  // Red (critical)
+                        if (risk > 40) return '#fd7e14';  // Orange (elevated)
+                        return '#28a745';  // Green (low)
+                    },
+                    'label': 'data(label)',
+                    'width': function(ele) {
+                        return ele.data('size') * 30 + 20;
+                    },
+                    'height': function(ele) {
+                        return ele.data('size') * 30 + 20;
+                    },
+                    'color': '#fff',
+                    'text-outline-color': '#000',
+                    'text-outline-width': 2,
+                    'font-size': '12px',
+                    'text-valign': 'center',
+                    'text-halign': 'center'
+                }
+            },
+            {
+                selector: 'edge',
+                style: {
+                    'width': function(ele) {
+                        return Math.min(ele.data('weight') * 5, 10);
+                    },
+                    'line-color': '#6c757d',
+                    'target-arrow-color': '#6c757d',
+                    'target-arrow-shape': 'triangle',
+                    'curve-style': 'bezier',
+                    'opacity': 0.7
+                }
+            },
+            {
+                selector: 'node:selected',
+                style: {
+                    'border-width': 3,
+                    'border-color': '#ffc107'
+                }
+            }
+        ],
+        layout: {
+            name: 'cose',
+            idealEdgeLength: 100,
+            nodeOverlap: 20,
+            refresh: 20,
+            fit: true,
+            padding: 30,
+            randomize: false,
+            componentSpacing: 100,
+            nodeRepulsion: 400000,
+            edgeElasticity: 100,
+            nestingFactor: 5,
+            gravity: 80,
+            numIter: 1000,
+            initialTemp: 200,
+            coolingFactor: 0.95,
+            minTemp: 1.0
+        }
+    });
+    
+    // Add tooltips on hover
+    cy.on('mouseover', 'node', function(event) {
+        const node = event.target;
+        const risk = node.data('risk_score');
+        const label = node.data('label');
+        
+        node.qtip({
+            content: {
+                text: `<strong>${label}</strong><br>Risk Score: ${risk.toFixed(1)}`
+            },
+            position: {
+                my: 'top center',
+                at: 'bottom center'
+            },
+            style: {
+                classes: 'qtip-bootstrap',
+                tip: {
+                    width: 16,
+                    height: 8
+                }
+            },
+            show: {
+                event: event.type,
+                ready: true
+            },
+            hide: {
+                event: 'mouseout unfocus'
+            }
+        }, event);
+    });
+    
+    cy.on('mouseover', 'edge', function(event) {
+        const edge = event.target;
+        const amount = edge.data('amount');
+        
+        edge.qtip({
+            content: {
+                text: `Amount: $${amount.toFixed(2)}`
+            },
+            position: {
+                my: 'top center',
+                at: 'bottom center'
+            },
+            style: {
+                classes: 'qtip-bootstrap',
+                tip: {
+                    width: 16,
+                    height: 8
+                }
+            },
+            show: {
+                event: event.type,
+                ready: true
+            },
+            hide: {
+                event: 'mouseout unfocus'
+            }
+        }, event);
+    });
+});
+</script>
+{% endif %}
+
+<!-- Network Map Modal -->
+<div class="modal fade" id="networkMapModal" tabindex="-1" aria-labelledby="networkMapModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content bg-dark">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title" id="networkMapModalLabel">
+                    <i class="bi bi-diagram-2"></i> Transaction Flow Network Map
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="modal-network-graph" style="height: 500px; border: 1px solid #495057; border-radius: 5px;"></div>
+                <div class="mt-3">
+                    <h6>Legend:</h6>
+                    <span class="badge bg-success">Low Risk</span>
+                    <span class="badge bg-warning">Elevated Risk</span>
+                    <span class="badge bg-danger">Critical Risk</span>
+                    <span class="ms-3"><i class="bi bi-arrow-right"></i> Transaction Direction</span>
+                    <span class="ms-3"><strong>Line Thickness</strong> = Transaction Amount</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Store transaction data for network visualization
+let transactionData = [];
+
+{% if results %}
+{% for result in results %}
+{% if result.status == 'success' %}
+transactionData.push({
+    id: {{ result.transaction_id }},
+    sender: "{{ result.risk_assessment.sender }}",
+    receiver: "{{ result.risk_assessment.receiver }}",
+    amount: {{ result.risk_assessment.amount }},
+    risk_score: {{ result.risk_assessment.risk_score }},
+    sender_centrality: {{ result.risk_assessment.sender_centrality }},
+    receiver_centrality: {{ result.risk_assessment.receiver_centrality }},
+    network_factor: {{ result.risk_assessment.network_factor }}
+});
+{% endif %}
+{% endfor %}
+{% endif %}
+
+// ========================================
+// FEATURE 1: RELATIONAL HIGHLIGHTING ON HOVER
+// ========================================
+document.addEventListener('DOMContentLoaded', function() {
+    const rows = document.querySelectorAll('.transaction-row');
+    
+    rows.forEach(row => {
+        row.addEventListener('mouseenter', function() {
+            const sender = this.getAttribute('data-sender');
+            const receiver = this.getAttribute('data-receiver');
+            
+            // Highlight all rows with matching sender or receiver
+            rows.forEach(otherRow => {
+                const otherSender = otherRow.getAttribute('data-sender');
+                const otherReceiver = otherRow.getAttribute('data-receiver');
+                
+                if (otherSender === sender || otherSender === receiver ||
+                    otherReceiver === sender || otherReceiver === receiver) {
+                    otherRow.style.backgroundColor = 'rgba(13, 110, 253, 0.2)'; // Light blue
+                }
+            });
+        });
+        
+        row.addEventListener('mouseleave', function() {
+            // Remove highlighting
+            rows.forEach(otherRow => {
+                otherRow.style.backgroundColor = '';
+            });
+        });
+    });
+    
+    // ========================================
+    // FEATURE 2: CONNECTION BADGE & TOOLTIP
+    // ========================================
+    updateConnectionBadges();
+    
+    // ========================================
+    // INITIALIZE REASONING INFO TOOLTIPS
+    // ========================================
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+});
+
+function updateConnectionBadges() {
+    const rows = document.querySelectorAll('.transaction-row');
+    const badges = document.querySelectorAll('.linked-badge');
+    
+    badges.forEach(badge => {
+        const txId = parseInt(badge.getAttribute('data-tx-id'));
+        const currentTx = transactionData.find(t => t.id === txId);
+        if (!currentTx) return;
+        
+        // Find all related transactions
+        const linkedTxs = transactionData.filter(t => 
+            t.id !== txId && (
+                t.sender === currentTx.sender || 
+                t.sender === currentTx.receiver ||
+                t.receiver === currentTx.sender || 
+                t.receiver === currentTx.receiver
+            )
+        );
+        
+        if (linkedTxs.length > 0) {
+            // Update badge text
+            badge.innerHTML = `<span class="badge bg-primary" style="cursor: help;">Linked to ${linkedTxs.length} others</span>`;
+            
+            // Create tooltip content
+            let tooltipHtml = '<div style="max-width: 300px;">';
+            tooltipHtml += '<strong>Connected Transactions:</strong><br>';
+            linkedTxs.forEach(tx => {
+                tooltipHtml += `<div style="margin: 5px 0; padding: 5px; background: rgba(0,0,0,0.3); border-radius: 3px;">`;
+                tooltipHtml += `#${tx.id}: $${tx.amount.toFixed(2)}<br>`;
+                tooltipHtml += `<small>${tx.sender.substring(0, 15)} → ${tx.receiver.substring(0, 15)}</small>`;
+                tooltipHtml += `</div>`;
+            });
+            tooltipHtml += '</div>';
+            
+            // Add Bootstrap tooltip
+            badge.setAttribute('data-bs-toggle', 'tooltip');
+            badge.setAttribute('data-bs-html', 'true');
+            badge.setAttribute('title', tooltipHtml);
+            
+            // Initialize tooltip
+            new bootstrap.Tooltip(badge);
+        } else {
+            badge.innerHTML = '<i class="bi bi-link-45deg text-muted"></i>';
+        }
+    });
+}
+
+// ========================================
+// FEATURE 3: ENHANCED GRAPH MODAL WITH CENTERING
+// ========================================
+function showNetworkMap(transactionId) {
+    // Find the transaction and related ones
+    const mainTransaction = transactionData.find(t => t.id === transactionId);
+    if (!mainTransaction) return;
+    
+    // Find all transactions involving the same accounts
+    const relatedTransactions = transactionData.filter(t => 
+        t.sender === mainTransaction.sender || 
+        t.sender === mainTransaction.receiver ||
+        t.receiver === mainTransaction.sender || 
+        t.receiver === mainTransaction.receiver
+    );
+    
+    // Build graph elements
+    const elements = [];
+    const addedNodes = new Set();
+    
+    relatedTransactions.forEach(tx => {
+        // Add sender node
+        if (!addedNodes.has(tx.sender)) {
+            elements.push({
+                data: {
+                    id: tx.sender,
+                    label: tx.sender.substring(0, 15),
+                    risk_score: tx.sender_centrality * 100,
+                    is_main: (tx.sender === mainTransaction.sender || tx.sender === mainTransaction.receiver)
+                }
+            });
+            addedNodes.add(tx.sender);
+        }
+        
+        // Add receiver node
+        if (!addedNodes.has(tx.receiver)) {
+            elements.push({
+                data: {
+                    id: tx.receiver,
+                    label: tx.receiver.substring(0, 15),
+                    risk_score: tx.receiver_centrality * 100,
+                    is_main: (tx.receiver === mainTransaction.sender || tx.receiver === mainTransaction.receiver)
+                }
+            });
+            addedNodes.add(tx.receiver);
+        }
+        
+        // Add edge
+        elements.push({
+            data: {
+                id: `edge-${tx.id}`,
+                source: tx.sender,
+                target: tx.receiver,
+                amount: tx.amount,
+                risk: tx.risk_score,
+                is_main: (tx.id === transactionId)
+            }
+        });
+    });
+    
+    // Show modal
+    const modal = new bootstrap.Modal(document.getElementById('networkMapModal'));
+    modal.show();
+    
+    // Initialize Cytoscape graph
+    setTimeout(() => {
+        const cy = cytoscape({
+            container: document.getElementById('modal-network-graph'),
+            elements: elements,
+            style: [
+                {
+                    selector: 'node',
+                    style: {
+                        'background-color': function(ele) {
+                            const risk = ele.data('risk_score');
+                            if (risk > 70) return '#dc3545';
+                            if (risk > 40) return '#fd7e14';
+                            return '#28a745';
+                        },
+                        'label': 'data(label)',
+                        'width': function(ele) {
+                            return ele.data('is_main') ? 70 : 45;
+                        },
+                        'height': function(ele) {
+                            return ele.data('is_main') ? 70 : 45;
+                        },
+                        'border-width': function(ele) {
+                            return ele.data('is_main') ? 5 : 0;
+                        },
+                        'border-color': '#0d6efd',
+                        'color': '#fff',
+                        'text-outline-color': '#000',
+                        'text-outline-width': 2,
+                        'font-size': function(ele) {
+                            return ele.data('is_main') ? '14px' : '11px';
+                        },
+                        'font-weight': function(ele) {
+                            return ele.data('is_main') ? 'bold' : 'normal';
+                        },
+                        'text-valign': 'center',
+                        'text-halign': 'center'
+                    }
+                },
+                {
+                    selector: 'edge',
+                    style: {
+                        'width': function(ele) {
+                            const amount = ele.data('amount');
+                            return Math.min(Math.log10(amount + 1) * 2, 12);
+                        },
+                        'line-color': function(ele) {
+                            return ele.data('is_main') ? '#0d6efd' : '#6c757d';
+                        },
+                        'target-arrow-color': function(ele) {
+                            return ele.data('is_main') ? '#0d6efd' : '#6c757d';
+                        },
+                        'target-arrow-shape': 'triangle',
+                        'curve-style': 'bezier',
+                        'opacity': function(ele) {
+                            return ele.data('is_main') ? 1.0 : 0.5;
+                        },
+                        'arrow-scale': 1.5
+                    }
+                }
+            ],
+            layout: {
+                name: 'cose',
+                idealEdgeLength: 150,
+                nodeOverlap: 30,
+                refresh: 10,
+                fit: true,
+                padding: 40,
+                randomize: false,
+                componentSpacing: 150,
+                nodeRepulsion: 200000,
+                edgeElasticity: 50,
+                gravity: 50,
+                numIter: 800,
+                initialTemp: 150,
+                coolingFactor: 0.95,
+                minTemp: 1.0
+            }
+        });
+        
+        // Center on main transaction nodes after layout
+        cy.ready(function() {
+            setTimeout(() => {
+                const mainNodes = cy.nodes().filter(node => node.data('is_main'));
+                if (mainNodes.length > 0) {
+                    cy.animate({
+                        center: { eles: mainNodes },
+                        zoom: 1.5,
+                        duration: 500
+                    });
+                }
+            }, 100);
+        });
+        
+        // Add interactive tooltips with better formatting
+        cy.on('tap', 'node', function(evt) {
+            const node = evt.target;
+            const isMain = node.data('is_main');
+            const mainIndicator = isMain ? '⭐ MAIN ACCOUNT\n' : '';
+            alert(`${mainIndicator}Account: ${node.data('id')}\nCentrality Risk: ${node.data('risk_score').toFixed(1)}%`);
+        });
+        
+        cy.on('tap', 'edge', function(evt) {
+            const edge = evt.target;
+            const isMain = edge.data('is_main');
+            const mainIndicator = isMain ? '⭐ SELECTED TRANSACTION\n' : '';
+            alert(`${mainIndicator}Transaction Amount: $${edge.data('amount').toFixed(2)}\nRisk Score: ${edge.data('risk').toFixed(1)}`);
+        });
+        
+        // Highlight connected edges on node hover
+        cy.on('mouseover', 'node', function(evt) {
+            const node = evt.target;
+            node.connectedEdges().style({
+                'width': function(ele) {
+                    const amount = ele.data('amount');
+                    return Math.min(Math.log10(amount + 1) * 3, 15);
+                },
+                'opacity': 1.0
+            });
+        });
+        
+        cy.on('mouseout', 'node', function(evt) {
+            const node = evt.target;
+            node.connectedEdges().style({
+                'width': function(ele) {
+                    const amount = ele.data('amount');
+                    return Math.min(Math.log10(amount + 1) * 2, 12);
+                },
+                'opacity': function(ele) {
+                    return ele.data('is_main') ? 1.0 : 0.5;
+                }
+            });
+        });
+    }, 300);
+}
+</script>
+
+{% endblock %}
+
