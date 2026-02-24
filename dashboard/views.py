@@ -389,6 +389,9 @@ def batch_analysis(request):
                                 if isinstance(graph_data, dict) and 'visualization' in graph_data:
                                     context['graph_data_json'] = json.dumps(graph_data['visualization'])
                                     context['graph_data'] = graph_data
+                                    # Store in session for network visualization page
+                                    request.session['graph_data'] = graph_data
+                                    request.session['graph_data_json'] = json.dumps(graph_data['visualization'])
                                 else:
                                     print(f"WARNING: graph_data missing 'visualization' key or wrong type after conversion")
                             except Exception as e:
@@ -443,6 +446,28 @@ def batch_analysis(request):
             messages.error(request, f"Error processing transactions: {str(e)}")
     
     return render(request, 'dashboard/batch_analysis.html', context)
+
+
+@login_required
+@audit_view('NETWORK_VIEW', 'User viewed network visualization')
+def network_visualization(request):
+    """
+    Dedicated network visualization page showing GNN analysis.
+    Displays interactive transaction network graph with suspicious pattern detection.
+    """
+    user_role = get_user_role(request.user)
+    
+    # Get graph data from session (stored during batch analysis)
+    graph_data = request.session.get('graph_data', None)
+    graph_data_json = request.session.get('graph_data_json', None)
+    
+    context = {
+        'graph_data': graph_data,
+        'graph_data_json': graph_data_json,
+        'user_role': user_role,
+    }
+    
+    return render(request, 'dashboard/network_visualization.html', context)
 
 
 @require_http_methods(["POST"])

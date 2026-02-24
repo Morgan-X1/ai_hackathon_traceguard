@@ -9,6 +9,7 @@ urlpatterns = [
     path('', views.index, name='index'),
     path('dashboard/', views.dashboard, name='dashboard'),
     path('batch-analysis/', views.batch_analysis, name='batch_analysis'),
+    path('network-visualization/', views.network_visualization, name='network_visualization'),
     path('api/predict/', views.predict_api, name='predict_api'),
     path('api/demask/', views.demask_transaction, name='demask_transaction'),
     path('audit-log/', views.audit_log, name='audit_log'),

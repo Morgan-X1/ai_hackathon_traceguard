@@ -1,0 +1,488 @@
+{% extends 'base.html' %}
+
+{% block title %}Network Visualization - TraceGuard AI{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2 class="text-gradient mb-3">
+                <i class="bi bi-diagram-3"></i> Transaction Network Visualization
+            </h2>
+            <p class="text-muted">
+                Interactive graph analysis powered by GraphSAGE GNN. Visualize transaction flows, detect circular patterns, and identify suspicious networks.
+            </p>
+        </div>
+    </div>
+
+    {% if graph_data_json %}
+    <!-- Network Statistics Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <i class="bi bi-people-fill text-info" style="font-size: 2rem;"></i>
+                    <h3 class="mt-2 mb-0">{{ graph_data.visualization.nodes|length }}</h3>
+                    <p class="text-muted mb-0">Total Accounts</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <i class="bi bi-arrow-left-right text-primary" style="font-size: 2rem;"></i>
+                    <h3 class="mt-2 mb-0">{{ graph_data.visualization.edges|length }}</h3>
+                    <p class="text-muted mb-0">Total Transfers</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <i class="bi bi-arrow-repeat text-danger" style="font-size: 2rem;"></i>
+                    <h3 class="mt-2 mb-0 text-danger">{{ graph_data.suspicious_patterns.circular_flow|length }}</h3>
+                    <p class="text-muted mb-0">Circular Flows</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <i class="bi bi-lightning-fill text-warning" style="font-size: 2rem;"></i>
+                    <h3 class="mt-2 mb-0 text-warning">{{ graph_data.suspicious_patterns.rapid_movement|length }}</h3>
+                    <p class="text-muted mb-0">Rapid Movement</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Network Graph -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h4 class="mb-0">
+                        <i class="bi bi-diagram-3"></i> Interactive Transaction Network
+                    </h4>
+                    <div>
+                        <button class="btn btn-sm btn-outline-primary" onclick="cy.fit()">
+                            <i class="bi bi-arrows-fullscreen"></i> Reset View
+                        </button>
+                        <button class="btn btn-sm btn-outline-success" onclick="exportNetworkImage()">
+                            <i class="bi bi-download"></i> Export
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <!-- Network Graph Canvas -->
+                    <div id="transaction-network" style="height: 700px; border: 1px solid #495057; border-radius: 8px; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);"></div>
+                    
+                    <!-- Legend -->
+                    <div class="mt-3 p-3" style="background: rgba(0,0,0,0.2); border-radius: 8px;">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6><i class="bi bi-info-circle"></i> Node Colors (Risk Levels)</h6>
+                                <span class="badge bg-success me-2">Low Risk (&lt;40)</span>
+                                <span class="badge bg-warning me-2">Elevated Risk (40-70)</span>
+                                <span class="badge bg-danger">Critical Risk (&gt;70)</span>
+                            </div>
+                            <div class="col-md-6">
+                                <h6><i class="bi bi-info-circle"></i> Visual Features</h6>
+                                <span class="me-3"><i class="bi bi-circle"></i> Node Size = Transaction Volume</span>
+                                <span class="me-3"><i class="bi bi-arrow-right"></i> Edge Thickness = Amount</span>
+                                <span><i class="bi bi-hand-index"></i> Click & Drag to Explore</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Suspicious Patterns Alerts -->
+    <div class="row mt-4">
+        {% if graph_data.suspicious_patterns.circular_flow %}
+        <div class="col-md-6">
+            <div class="alert alert-danger">
+                <h5><i class="bi bi-exclamation-triangle-fill"></i> Circular Flow Patterns Detected</h5>
+                <p class="mb-2">{{ graph_data.suspicious_patterns.circular_flow|length }} potential money laundering ring(s) found with circular transaction flows.</p>
+                <hr>
+                <small><strong>Pattern Type:</strong> Placement/Layering - Funds moving in circular paths to obscure origin</small>
+            </div>
+        </div>
+        {% endif %}
+        
+        {% if graph_data.suspicious_patterns.rapid_movement %}
+        <div class="col-md-6">
+            <div class="alert alert-warning">
+                <h5><i class="bi bi-lightning-fill"></i> Rapid Money Movement</h5>
+                <p class="mb-2">{{ graph_data.suspicious_patterns.rapid_movement|length }} account(s) showing rapid transaction velocity (potential layering).</p>
+                <hr>
+                <small><strong>Pattern Type:</strong> Layering - Quick transfers to distance funds from illegal source</small>
+            </div>
+        </div>
+        {% endif %}
+        
+        {% if graph_data.suspicious_patterns.structuring %}
+        <div class="col-md-12">
+            <div class="alert alert-info">
+                <h5><i class="bi bi-layers-fill"></i> Structuring Patterns</h5>
+                <p class="mb-2">{{ graph_data.suspicious_patterns.structuring|length }} account(s) showing structuring behavior (multiple small transactions).</p>
+                <hr>
+                <small><strong>Pattern Type:</strong> Structuring/Smurfing - Breaking large amounts into smaller transactions to avoid reporting thresholds</small>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Network Analysis Details -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="mb-0"><i class="bi bi-bar-chart-line"></i> GNN Analysis Details</h4>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>GraphSAGE Architecture</h6>
+                            <ul class="list-unstyled">
+                                <li><i class="bi bi-check-circle-fill text-success"></i> 3-Layer Graph Neural Network</li>
+                                <li><i class="bi bi-check-circle-fill text-success"></i> Node Embedding: 8 → 32 → 32 → 16 dimensions</li>
+                                <li><i class="bi bi-check-circle-fill text-success"></i> Final Classification: 16 → 1 (risk score)</li>
+                                <li><i class="bi bi-check-circle-fill text-success"></i> Aggregation: Mean pooling of neighbor features</li>
+                            </ul>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Network Features Analyzed</h6>
+                            <ul class="list-unstyled">
+                                <li><i class="bi bi-diagram-2"></i> Transaction frequency & velocity</li>
+                                <li><i class="bi bi-diagram-2"></i> Account-to-account relationships</li>
+                                <li><i class="bi bi-diagram-2"></i> Circular flow detection</li>
+                                <li><i class="bi bi-diagram-2"></i> Cluster analysis & community detection</li>
+                                <li><i class="bi bi-diagram-2"></i> Money mule identification (2.5x boost)</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% else %}
+    <!-- No Data State -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body text-center py-5">
+                    <i class="bi bi-diagram-3" style="font-size: 4rem; opacity: 0.3;"></i>
+                    <h4 class="mt-3">No Network Data Available</h4>
+                    <p class="text-muted">Upload batch transactions to generate network visualization</p>
+                    <a href="{% url 'batch_analysis' %}" class="btn btn-primary mt-3">
+                        <i class="bi bi-upload"></i> Go to Batch Analysis
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Cytoscape.js for Network Visualization -->
+{% if graph_data_json %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
+<script>
+let cy; // Global cytoscape instance
+
+document.addEventListener('DOMContentLoaded', function() {
+    const graphData = JSON.parse('{{ graph_data_json|escapejs }}');
+    
+    // Transform to Cytoscape format
+    const elements = [];
+    
+    // Add nodes
+    graphData.nodes.forEach(node => {
+        elements.push({
+            data: {
+                id: node.id.toString(),
+                label: node.label,
+                risk_score: node.risk_score,
+                size: node.size
+            }
+        });
+    });
+    
+    // Add edges
+    graphData.edges.forEach(edge => {
+        elements.push({
+            data: {
+                id: `edge-${edge.source}-${edge.target}`,
+                source: edge.source.toString(),
+                target: edge.target.toString(),
+                weight: edge.weight,
+                amount: edge.amount
+            }
+        });
+    });
+    
+    // Initialize Cytoscape
+    cy = cytoscape({
+        container: document.getElementById('transaction-network'),
+        elements: elements,
+        style: [
+            {
+                selector: 'node',
+                style: {
+                    'background-color': function(ele) {
+                        const risk = ele.data('risk_score');
+                        if (risk > 70) return '#dc3545';  // Red (critical)
+                        if (risk > 40) return '#fd7e14';  // Orange (elevated)
+                        return '#28a745';  // Green (low)
+                    },
+                    'label': 'data(label)',
+                    'width': function(ele) {
+                        return ele.data('size') * 40 + 30;
+                    },
+                    'height': function(ele) {
+                        return ele.data('size') * 40 + 30;
+                    },
+                    'color': '#fff',
+                    'text-outline-color': '#000',
+                    'text-outline-width': 2,
+                    'font-size': '14px',
+                    'text-valign': 'center',
+                    'text-halign': 'center',
+                    'border-width': 2,
+                    'border-color': '#fff',
+                    'border-opacity': 0.5
+                }
+            },
+            {
+                selector: 'edge',
+                style: {
+                    'width': function(ele) {
+                        return Math.min(ele.data('weight') * 6, 12);
+                    },
+                    'line-color': '#6c757d',
+                    'target-arrow-color': '#6c757d',
+                    'target-arrow-shape': 'triangle',
+                    'curve-style': 'bezier',
+                    'opacity': 0.8,
+                    'arrow-scale': 1.5
+                }
+            },
+            {
+                selector: 'node:selected',
+                style: {
+                    'border-width': 4,
+                    'border-color': '#ffc107',
+                    'border-opacity': 1
+                }
+            },
+            {
+                selector: 'edge:selected',
+                style: {
+                    'line-color': '#ffc107',
+                    'target-arrow-color': '#ffc107',
+                    'opacity': 1,
+                    'width': 6
+                }
+            }
+        ],
+        layout: {
+            name: 'cose',
+            idealEdgeLength: 120,
+            nodeOverlap: 30,
+            refresh: 20,
+            fit: true,
+            padding: 40,
+            randomize: false,
+            componentSpacing: 120,
+            nodeRepulsion: 500000,
+            edgeElasticity: 120,
+            nestingFactor: 5,
+            gravity: 80,
+            numIter: 1200,
+            initialTemp: 250,
+            coolingFactor: 0.95,
+            minTemp: 1.0
+        },
+        wheelSensitivity: 0.2
+    });
+    
+    // Add tooltips on hover
+    cy.on('mouseover', 'node', function(event) {
+        const node = event.target;
+        const risk = node.data('risk_score');
+        const label = node.data('label');
+        
+        // Show tooltip
+        node.style({
+            'border-width': 4,
+            'border-opacity': 1
+        });
+        
+        // Update status in console or UI
+        console.log(`Node: ${label}, Risk: ${risk.toFixed(1)}`);
+    });
+    
+    cy.on('mouseout', 'node', function(event) {
+        const node = event.target;
+        if (!node.selected()) {
+            node.style({
+                'border-width': 2,
+                'border-opacity': 0.5
+            });
+        }
+    });
+    
+    cy.on('tap', 'node', function(event) {
+        const node = event.target;
+        const risk = node.data('risk_score');
+        const label = node.data('label');
+        
+        // Show detailed info
+        showNodeDetails(label, risk);
+    });
+    
+    cy.on('mouseover', 'edge', function(event) {
+        const edge = event.target;
+        edge.style({
+            'line-color': '#0dcaf0',
+            'target-arrow-color': '#0dcaf0',
+            'opacity': 1
+        });
+    });
+    
+    cy.on('mouseout', 'edge', function(event) {
+        const edge = event.target;
+        if (!edge.selected()) {
+            edge.style({
+                'line-color': '#6c757d',
+                'target-arrow-color': '#6c757d',
+                'opacity': 0.8
+            });
+        }
+    });
+});
+
+function showNodeDetails(label, risk) {
+    // Create a modal or toast with node details
+    const riskLevel = risk > 70 ? 'CRITICAL' : risk > 40 ? 'ELEVATED' : 'LOW';
+    const color = risk > 70 ? 'danger' : risk > 40 ? 'warning' : 'success';
+    
+    const toast = `
+        <div class="toast align-items-center text-white bg-${color} border-0" role="alert">
+            <div class="d-flex">
+                <div class="toast-body">
+                    <strong>${label}</strong><br>
+                    Risk Score: ${risk.toFixed(1)} (${riskLevel})
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+            </div>
+        </div>
+    `;
+    
+    const container = document.getElementById('toast-container') || createToastContainer();
+    container.innerHTML = toast;
+    const toastEl = container.querySelector('.toast');
+    const bsToast = new bootstrap.Toast(toastEl, { delay: 3000 });
+    bsToast.show();
+}
+
+function createToastContainer() {
+    const container = document.createElement('div');
+    container.id = 'toast-container';
+    container.className = 'toast-container position-fixed top-0 end-0 p-3';
+    container.style.zIndex = '9999';
+    document.body.appendChild(container);
+    return container;
+}
+
+function exportNetworkImage() {
+    if (cy) {
+        const png = cy.png({
+            output: 'blob',
+            bg: '#1a1a2e',
+            full: true,
+            scale: 2
+        });
+        
+        const url = URL.createObjectURL(png);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'traceguard-network-' + Date.now() + '.png';
+        link.click();
+        URL.revokeObjectURL(url);
+        
+        showToast('Success', 'Network visualization exported successfully!', 'success');
+    }
+}
+
+function showToast(title, message, type = 'info') {
+    const container = document.getElementById('toast-container') || createToastContainer();
+    
+    const toast = document.createElement('div');
+    toast.className = `toast align-items-center text-white bg-${type} border-0`;
+    toast.setAttribute('role', 'alert');
+    
+    toast.innerHTML = `
+        <div class="d-flex">
+            <div class="toast-body">
+                <strong>${title}:</strong> ${message}
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    `;
+    
+    container.appendChild(toast);
+    const bsToast = new bootstrap.Toast(toast, { delay: 4000 });
+    bsToast.show();
+    
+    toast.addEventListener('hidden.bs.toast', () => toast.remove());
+}
+</script>
+{% endif %}
+
+<style>
+    .card {
+        background: linear-gradient(135deg, #1e1e2f 0%, #2a2a40 100%);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    }
+    
+    .card-header {
+        background: rgba(0, 0, 0, 0.2);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    
+    .text-gradient {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+    
+    #transaction-network {
+        position: relative;
+    }
+    
+    .alert {
+        border-radius: 8px;
+        border-left: 4px solid;
+    }
+    
+    .alert-danger {
+        border-left-color: #dc3545;
+    }
+    
+    .alert-warning {
+        border-left-color: #ffc107;
+    }
+    
+    .alert-info {
+        border-left-color: #0dcaf0;
+    }
+</style>
+{% endblock %}
