@@ -1,12 +1,15 @@
 """
 TraceGuard AI - Dashboard Views
 Handles transaction form submission and risk prediction
+Includes RBAC, data masking, and audit logging for CBK compliance
 """
 from django.shortcuts import render, redirect
 from django.contrib import messages
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.core.files.storage import default_storage
+from django.contrib.auth.decorators import login_required
+from django.utils import timezone
 import logging
 import json
 import os
@@ -18,6 +21,10 @@ from .batch_processor import (
     analyze_csv_file, analyze_json_file, process_transaction_list,
     get_high_risk_transactions, get_elevated_risk_transactions, 
     get_structuring_transactions, generate_summary_report
+)
+from .rbac import (
+    role_required, audit_view, log_audit_trail, mask_transaction_data,
+    get_user_role, can_demask_data
 )
 
 
@@ -44,14 +51,22 @@ def index(request):
 
 
 @require_http_methods(["GET", "POST"])
+@login_required
+@audit_view('SINGLE_ANALYZE', 'User analyzed single transaction')
 def dashboard(request):
     """
     Main dashboard view with transaction form and risk prediction.
+    Requires authentication. All access is logged for CBK compliance.
     """
+    # Add user role to context
+    user_role = get_user_role(request.user)
+    
     context = {
         'form': TransactionForm(),
         'prediction': None,
         'show_results': False,
+        'user_role': user_role,
+        'user_can_demask': False,
     }
     
     if request.method == 'POST':
@@ -91,6 +106,34 @@ def dashboard(request):
                 
                 # Add color coding
                 prediction_result['risk_color'] = get_risk_color(prediction_result['risk_score'])
+                
+                # Apply data masking based on user role
+                # Create mock transaction dict with sensitive fields
+                masked_transaction = {
+                    'transaction_id': f"TXN-{prediction_result.get('risk_score', 0):.0f}",
+                    'account_number': f"{transaction_data['Sender_ID']}{transaction_data['Receiver_ID']}",
+                    'customer_name': 'John Doe',  # Mock name
+                    'sender_account': str(transaction_data['Sender_ID']),
+                    'receiver_account': str(transaction_data['Receiver_ID']),
+                    'risk_score': prediction_result['risk_score'],
+                }
+                
+                masked_data = mask_transaction_data(masked_transaction, request.user, log_access=True)
+                prediction_result['masked_sender'] = masked_data.get('sender_account', transaction_data['Sender_ID'])
+                prediction_result['masked_receiver'] = masked_data.get('receiver_account', transaction_data['Receiver_ID'])
+                prediction_result['data_masked'] = masked_data.get('_masked', True)
+                prediction_result['can_demask'] = masked_data.get('_demask_allowed', False)
+                
+                # Log the analysis
+                log_audit_trail(
+                    user=request.user,
+                    action='SINGLE_ANALYZE',
+                    description=f"Analyzed transaction: Amount ${transaction_data['Amount']:.2f}, Risk {prediction_result['risk_score']:.1f}",
+                    risk_score=prediction_result['risk_score'],
+                    data_masked=prediction_result['data_masked'],
+                    success=True,
+                    request=request
+                )
                 
                 # Check for warnings
                 warnings = form.get_warnings()
@@ -194,17 +237,24 @@ def about(request):
 
 
 @require_http_methods(["GET", "POST"])
+@login_required
+@audit_view('BATCH_UPLOAD', 'User uploaded batch transaction file')
 def batch_analysis(request):
     """
     Batch analysis view - upload and analyze multiple transactions.
     Handles partial data - only requires Amount, Sender, Receiver at minimum.
+    Requires authentication. All access is logged for CBK compliance.
     """
+    # Add user role to context
+    user_role = get_user_role(request.user)
+    
     context = {
         'results': None,
         'summary': None,
         'critical_risk': None,
         'elevated_risk': None,
         'structuring': None,
+        'user_role': user_role,
     }
     
     if request.method == 'POST':
@@ -267,7 +317,24 @@ def batch_analysis(request):
                 elevated_risk = get_elevated_risk_transactions(results)
                 structuring = get_structuring_transactions(results)
                 
-                context['results'] = results
+                # Apply data masking to all results
+                masked_results = []
+                for result in results:
+                    masked_result = mask_transaction_data(result, request.user, log_access=False)
+                    masked_results.append(masked_result)
+                
+                # Log batch analysis
+                log_audit_trail(
+                    user=request.user,
+                    action='BATCH_UPLOAD',
+                    description=f"Batch analyzed {len(results)} transactions from file: {uploaded_file.name}",
+                    risk_score=summary.get('avg_risk', 0),
+                    data_masked=True,
+                    success=True,
+                    request=request
+                )
+                
+                context['results'] = masked_results
                 context['summary'] = summary
                 context['critical_risk'] = critical_risk
                 context['elevated_risk'] = elevated_risk
@@ -335,7 +402,24 @@ def batch_analysis(request):
                     elevated_risk = get_elevated_risk_transactions(results)
                     structuring = get_structuring_transactions(results)
                     
-                    context['results'] = results
+                    # Apply data masking to all results
+                    masked_results = []
+                    for result in results:
+                        masked_result = mask_transaction_data(result, request.user, log_access=False)
+                        masked_results.append(masked_result)
+                    
+                    # Log batch analysis
+                    log_audit_trail(
+                        user=request.user,
+                        action='BATCH_UPLOAD',
+                        description=f"Batch analyzed {len(results)} transactions from JSON paste",
+                        risk_score=summary.get('avg_risk', 0),
+                        data_masked=True,
+                        success=True,
+                        request=request
+                    )
+                    
+                    context['results'] = masked_results
                     context['summary'] = summary
                     context['critical_risk'] = critical_risk
                     context['elevated_risk'] = elevated_risk
@@ -359,3 +443,113 @@ def batch_analysis(request):
             messages.error(request, f"Error processing transactions: {str(e)}")
     
     return render(request, 'dashboard/batch_analysis.html', context)
+
+
+@require_http_methods(["POST"])
+@login_required
+@role_required('COMPLIANCE_OFFICER', 'ADMIN')
+def demask_transaction(request):
+    """
+    API endpoint for Compliance Officers to demask sensitive transaction data.
+    Only allowed for transactions with risk_score >= threshold (default 0.8).
+    Every demask action is logged to AuditTrail.
+    """
+    try:
+        data = json.loads(request.body)
+        transaction_id = data.get('transaction_id')
+        risk_score = float(data.get('risk_score', 0))
+        
+        # Check permission
+        if not can_demask_data(request.user, risk_score):
+            log_audit_trail(
+                user=request.user,
+                action='PERMISSION_DENIED',
+                description=f"Attempted to demask transaction {transaction_id} with risk score {risk_score}",
+                transaction_id=transaction_id,
+                risk_score=risk_score,
+                success=False,
+                error_message=f"Risk score {risk_score} below threshold",
+                request=request
+            )
+            return JsonResponse({
+                'success': False,
+                'error': f'Insufficient risk score. Minimum: {request.user.profile.demask_threshold}'
+            }, status=403)
+        
+        # In a real system, fetch actual data from database
+        # For now, return mock demasked data
+        demasked_data = {
+            'account_number': data.get('account_number', 'ACCT-12345678'),
+            'customer_name': data.get('customer_name', 'John Michael Doe'),
+            'sender_account': data.get('sender_account', 'SEND-87654321'),
+            'receiver_account': data.get('receiver_account', 'RECV-11223344'),
+        }
+        
+        # Log successful demask
+        log_audit_trail(
+            user=request.user,
+            action='DEMASK',
+            description=f"Demasked transaction {transaction_id} (Risk: {risk_score:.1f})",
+            transaction_id=transaction_id,
+            risk_score=risk_score,
+            data_masked=False,
+            success=True,
+            request=request
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'data': demasked_data,
+            'demasked_by': request.user.username,
+            'demasked_at': timezone.now().isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Demask error: {str(e)}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@require_http_methods(["GET"])
+@login_required
+@role_required('COMPLIANCE_OFFICER', 'ADMIN')
+def audit_log(request):
+    """
+    View audit trail logs.
+    Only accessible by Compliance Officers and Admins.
+    """
+    from .models import AuditTrail
+    from django.core.paginator import Paginator
+    
+    # Get filters
+    action_filter = request.GET.get('action', '')
+    user_filter = request.GET.get('user', '')
+    
+    # Query audit trail
+    logs = AuditTrail.objects.all()
+    
+    if action_filter:
+        logs = logs.filter(action=action_filter)
+    if user_filter:
+        logs = logs.filter(username__icontains=user_filter)
+    
+    # Paginate
+    paginator = Paginator(logs, 50)
+    page_number = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_number)
+    
+    # Get distinct actions for filter dropdown
+    actions = AuditTrail.objects.values_list('action', flat=True).distinct()
+    
+    context = {
+        'page_obj': page_obj,
+        'actions': actions,
+        'action_filter': action_filter,
+        'user_filter': user_filter,
+        'user_role': get_user_role(request.user),
+    }
+    
+    return render(request, 'dashboard/audit_log.html', context)
+
