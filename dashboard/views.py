@@ -1097,7 +1097,8 @@ in legal action under Kenya's Banking Act.
         log_audit_trail(
             user=request.user,
             action='PDF_EXPORT',
-            details=f"Exported FRC dossier {case_id} as PDF"
+            description=f"Exported FRC dossier {case_id} as PDF",
+            request=request
         )
         
         logger.info(f"Exported PDF for case {case_id} by {request.user.username}")
