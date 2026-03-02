@@ -351,18 +351,18 @@ def batch_analysis(request):
                     request=request
                 )
                 
-                context['results'] = masked_results
-                context['summary'] = summary
-                context['critical_risk'] = critical_risk
-                context['elevated_risk'] = elevated_risk
-                context['structuring'] = structuring
+                # Store results in session for results page
+                request.session['analysis_results'] = masked_results
+                request.session['analysis_summary'] = summary
+                request.session['critical_risk'] = critical_risk
+                request.session['elevated_risk'] = elevated_risk
+                request.session['structuring'] = structuring
+                request.session['source'] = 'file'
+                request.session['filename'] = uploaded_file.name
+                request.session.modified = True
                 
-                messages.success(
-                    request,
-                    f"Analyzed {summary['successful_analysis']} transactions. "
-                    f"Found {len(critical_risk)} 🚨 CRITICAL, {len(elevated_risk)} ⚠️ ELEVATED, "
-                    f"and {len(structuring)} structuring attempts."
-                )
+                # Redirect to results page
+                return redirect('analysis_results')
                 
             # Check if JSON was pasted
             elif 'transaction_json' in request.POST:
@@ -448,19 +448,17 @@ def batch_analysis(request):
                         request=request
                     )
                     
-                    context['results'] = masked_results
-                    context['summary'] = summary
-                    context['critical_risk'] = critical_risk
-                    context['elevated_risk'] = elevated_risk
-                    context['structuring'] = structuring
-                    context['graph_data'] = graph_data  # For conditional display
+                    # Store results in session for results page
+                    request.session['analysis_results'] = masked_results
+                    request.session['analysis_summary'] = summary
+                    request.session['critical_risk'] = critical_risk
+                    request.session['elevated_risk'] = elevated_risk
+                    request.session['structuring'] = structuring
+                    request.session['source'] = 'json'
+                    request.session.modified = True
                     
-                    messages.success(
-                        request,
-                        f"Analyzed {summary['successful_analysis']} transactions. "
-                        f"Found {len(critical_risk)} 🚨 CRITICAL, {len(elevated_risk)} ⚠️ ELEVATED, "
-                        f"and {len(structuring)} structuring attempts."
-                    )
+                    # Redirect to results page
+                    return redirect('analysis_results')
                     
                 except json.JSONDecodeError as e:
                     messages.error(request, f"Invalid JSON: {str(e)}")
@@ -472,6 +470,57 @@ def batch_analysis(request):
             messages.error(request, f"Error processing transactions: {str(e)}")
     
     return render(request, 'dashboard/batch_analysis.html', context)
+
+
+@login_required
+@audit_view('ANALYSIS_RESULTS_VIEW', 'User viewed analysis results')
+def analysis_results(request):
+    """
+    Display analysis results on a separate page after batch processing.
+    Shows transaction analysis, risk distribution, and detailed findings.
+    """
+    user_role = get_user_role(request.user)
+    
+    # Get results from session
+    results = request.session.get('analysis_results', [])
+    summary = request.session.get('analysis_summary', {})
+    critical_risk = request.session.get('critical_risk', [])
+    elevated_risk = request.session.get('elevated_risk', [])
+    structuring = request.session.get('structuring', [])
+    source = request.session.get('source', 'unknown')
+    filename = request.session.get('filename', 'N/A')
+    
+    # Get graph data for network visualization
+    graph_data = request.session.get('graph_data', None)
+    graph_data_json = request.session.get('graph_data_json', None)
+    
+    # If no results, redirect back to batch analysis
+    if not results:
+        messages.warning(request, "No analysis results found. Please upload transactions first.")
+        return redirect('batch_analysis')
+    
+    context = {
+        'user_role': user_role,
+        'results': results,
+        'summary': summary,
+        'critical_risk': critical_risk,
+        'elevated_risk': elevated_risk,
+        'structuring': structuring,
+        'source': source,
+        'filename': filename,
+        'graph_data': graph_data,
+        'graph_data_json': graph_data_json,
+    }
+    
+    # Add success message
+    messages.success(
+        request,
+        f"Analyzed {summary.get('successful_analysis', 0)} transactions. "
+        f"Found {len(critical_risk)} 🚨 CRITICAL, {len(elevated_risk)} ⚠️ ELEVATED, "
+        f"and {len(structuring)} structuring attempts."
+    )
+    
+    return render(request, 'dashboard/analysis_results.html', context)
 
 
 @login_required
