@@ -520,17 +520,17 @@
                                 <td>
                                     {% if result.status == 'success' %}
                                         <small>
-                                            <span class="{% if result._masked %}masked-field{% endif %}">
-                                                {% if result._masked %}<i class="bi bi-lock-fill text-warning me-1"></i>{% endif %}
+                                            <span class="{% if result.is_masked %}masked-field{% endif %}">
+                                                {% if result.is_masked %}<i class="bi bi-lock-fill text-warning me-1"></i>{% endif %}
                                                 <code class="text-info">{{ result.risk_assessment.sender|truncatechars:12 }}</code>
                                             </span>
                                             <i class="bi bi-arrow-right"></i>
-                                            <span class="{% if result._masked %}masked-field{% endif %}">
-                                                {% if result._masked %}<i class="bi bi-lock-fill text-warning me-1"></i>{% endif %}
+                                            <span class="{% if result.is_masked %}masked-field{% endif %}">
+                                                {% if result.is_masked %}<i class="bi bi-lock-fill text-warning me-1"></i>{% endif %}
                                                 <code class="text-success">{{ result.risk_assessment.receiver|truncatechars:12 }}</code>
                                             </span>
                                         </small>
-                                        {% if result._demask_allowed %}
+                                        {% if result.can_demask %}
                                         <button class="btn btn-xs btn-warning demask-btn ms-2" 
                                                 data-tx-id="{{ result.transaction_id }}"
                                                 data-risk-score="{{ result.risk_assessment.risk_score }}"
@@ -623,14 +623,14 @@
                                     {% endif %}
                                 </td>
                                 <td>
-                                    {% if result.status == 'success' and result._demask_allowed %}
+                                    {% if result.status == 'success' and result.can_demask %}
                                         <button class="btn btn-sm btn-warning demask-btn" 
                                                 data-tx-id="{{ result.transaction_id }}"
                                                 data-risk-score="{{ result.risk_assessment.risk_score|floatformat:1 }}"
                                                 title="Unmask sensitive data (Risk Score: {{ result.risk_assessment.risk_score|floatformat:1 }})">
                                             <i class="bi bi-unlock-fill"></i> Unmask
                                         </button>
-                                    {% elif result.status == 'success' and result._masked %}
+                                    {% elif result.status == 'success' and result.is_masked %}
                                         <small class="text-muted">
                                             <i class="bi bi-lock-fill"></i> Low risk
                                         </small>
@@ -658,9 +658,16 @@
                 <h4 class="mb-0">
                     <i class="bi bi-diagram-3"></i> Transaction Network Analysis
                 </h4>
-                <a href="{% url 'network_visualization' %}" class="btn btn-primary">
-                    <i class="bi bi-arrows-fullscreen"></i> View Full Network Page
-                </a>
+                <div>
+                    <a href="{% url 'network_visualization' %}" class="btn btn-primary">
+                        <i class="bi bi-arrows-fullscreen"></i> View Full Network Page
+                    </a>
+                    {% if user_role == 'COMPLIANCE_OFFICER' or user_role == 'ADMIN' %}
+                    <button class="btn btn-warning ms-2" onclick="gemmaDeepAnalysis()" title="FRC National Security Dossier">
+                        <i class="bi bi-shield-check"></i> Gemma Deep Analysis
+                    </button>
+                    {% endif %}
+                </div>
             </div>
             <div class="card-body">
                 <div class="alert alert-info">
@@ -1423,7 +1430,542 @@ function showNetworkMap(transactionId) {
         });
     }, 300);
 }
+
+/**
+ * Generate AI Forensic Report
+ * Calls backend API to generate forensic analysis using Ollama llama3.2
+ */
+function generateForensicReport() {
+    console.log('Generate AI Report clicked');
+    
+    // Show loading modal
+    const modal = new bootstrap.Modal(document.getElementById('forensicReportModal'));
+    modal.show();
+    
+    // Set loading state
+    document.getElementById('reportContent').innerHTML = `
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-3 text-info">Analyzing transaction patterns with AI...</p>
+            <small class="text-secondary">This may take 10-30 seconds depending on transaction volume</small>
+        </div>
+    `;
+    
+    // Get CSRF token
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    console.log('CSRF token found:', csrfToken ? 'Yes' : 'No');
+    
+    // Make API call to generate report
+    console.log('Sending request to /api/forensic-report/');
+    fetch('/api/forensic-report/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
+        },
+        body: JSON.stringify({
+            transactions: [] // Backend will get from session
+        })
+    })
+    .then(response => {
+        console.log('Response status:', response.status);
+        return response.json();
+    })
+    .then(data => {
+        console.log('Response data:', data);
+        if (data.success) {
+            // Display the AI-generated report
+            const report = data.report;
+            const metadata = data.metadata || {};
+            const contextSummary = data.context_summary || {};
+            
+            // Format the report with sections
+            const formattedReport = formatForensicReport(report, metadata, contextSummary);
+            document.getElementById('reportContent').innerHTML = formattedReport;
+        } else {
+            // Display error message
+            document.getElementById('reportContent').innerHTML = `
+                <div class="alert alert-danger">
+                    <h5><i class="bi bi-exclamation-triangle-fill"></i> Error Generating Report</h5>
+                    <p><strong>${data.error || 'Unknown error'}</strong></p>
+                    <p>${data.message || 'Please try again.'}</p>
+                    ${data.error === 'Ollama service not available' || data.error === 'No models found' ? `
+                        <hr>
+                        <h6>Setup Instructions:</h6>
+                        <ol>
+                            <li>Install Ollama (if not installed): <a href="https://ollama.ai" target="_blank">https://ollama.ai</a></li>
+                            <li>Start Ollama service: <code>ollama serve</code></li>
+                            <li>Pull a model: <code>ollama pull gemma3:4b</code> or <code>ollama pull llama3.2</code></li>
+                            <li>Refresh this page and try again</li>
+                        </ol>
+                    ` : ''}
+                </div>
+            `;
+        }
+    })
+    .catch(error => {
+        console.error('Error generating report:', error);
+        document.getElementById('reportContent').innerHTML = `
+            <div class="alert alert-danger">
+                <h5><i class="bi bi-x-circle-fill"></i> Network Error</h5>
+                <p>Failed to connect to the server: ${error.message}</p>
+                <p><strong>Check browser console for details (F12)</strong></p>
+            </div>
+        `;
+    });
+}
+
+/**
+ * Format the forensic report with proper styling
+ */
+function formatForensicReport(report, metadata, contextSummary) {
+    // Metadata badges
+    const metadataBadges = `
+        <div class="mb-3">
+            <span class="badge bg-primary me-2">
+                <i class="bi bi-list-check"></i> ${metadata.total_transactions || 0} Transactions
+            </span>
+            <span class="badge bg-danger me-2">
+                <i class="bi bi-exclamation-triangle-fill"></i> ${metadata.critical_count || 0} Critical
+            </span>
+            ${metadata.structuring_detected ? '<span class="badge bg-warning me-2"><i class="bi bi-shield-exclamation"></i> Structuring Detected</span>' : ''}
+            ${metadata.network_patterns ? `<span class="badge bg-info me-2"><i class="bi bi-diagram-3"></i> ${metadata.network_patterns.length} Network Patterns</span>` : ''}
+            <span class="badge bg-secondary">
+                <i class="bi bi-cpu"></i> Model: ${metadata.model_used || 'llama3.2'}
+            </span>
+        </div>
+    `;
+    
+    // Split report into sections (AI typically formats with headers)
+    let formattedContent = report;
+    
+    // Add styling to common section headers
+    formattedContent = formattedContent
+        .replace(/## (Executive Summary|Key Findings|Typologies Identified|Risk Assessment|Recommendations)/gi, 
+                 '<h5 class="mt-4 text-primary"><i class="bi bi-chevron-right"></i> $1</h5>')
+        .replace(/### (.+)/g, '<h6 class="mt-3 text-secondary">$1</h6>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\n\n/g, '</p><p>')
+        .replace(/^(.+)$/gm, function(match) {
+            if (!match.trim().startsWith('<')) {
+                return '<p>' + match + '</p>';
+            }
+            return match;
+        });
+    
+    // Context summary
+    const contextInfo = contextSummary.transactions ? `
+        <div class="alert alert-info mt-3">
+            <small>
+                <strong>Analysis Context:</strong> 
+                ${contextSummary.transactions.total || 0} transactions analyzed | 
+                ${contextSummary.network ? `${contextSummary.network.nodes || 0} network nodes, ${contextSummary.network.edges || 0} edges` : 'No network data'}
+            </small>
+        </div>
+    ` : '';
+    
+    return `
+        ${metadataBadges}
+        <div class="report-content">
+            ${formattedContent}
+        </div>
+        ${contextInfo}
+        <div class="text-center mt-4">
+            <button class="btn btn-secondary" data-bs-dismiss="modal">
+                <i class="bi bi-x-lg"></i> Close
+            </button>
+            <button class="btn btn-primary" onclick="exportReport()">
+                <i class="bi bi-download"></i> Export Report
+            </button>
+        </div>
+    `;
+}
+
+/**
+ * Export the forensic report as a text file
+ */
+function exportReport() {
+    const reportContent = document.getElementById('reportContent').innerText;
+    const blob = new Blob([reportContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `forensic_report_${new Date().toISOString().slice(0,10)}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+/**
+ * Gemma Deep Analysis - National Security Forensic Dossier
+ * FRC-style investigative narrative generation
+ */
+function gemmaDeepAnalysis() {
+    console.log('Gemma Deep Analysis clicked');
+    
+    // Show official document side-panel
+    const sidePanel = document.getElementById('gemmaSidePanel');
+    sidePanel.classList.add('show');
+    
+    // Set loading state
+    document.getElementById('gemmaDossierContent').innerHTML = `
+        <div class="text-center py-5">
+            <div class="spinner-border text-warning" role="status" style="width: 3rem; height: 3rem;">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-3 text-warning"><strong>Gemma Reasoning Engine Initializing...</strong></p>
+            <small class="text-secondary">Analyzing graph topology and transaction patterns</small>
+            <p class="mt-2 text-info"><small>This may take 20-45 seconds for comprehensive forensic analysis</small></p>
+        </div>
+    `;
+    
+    // Get CSRF token
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    console.log('Sending request to Gemma Deep Analysis API');
+    
+    // Make API call
+    fetch('/api/gemma-deep-analysis/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
+        },
+        body: JSON.stringify({})
+    })
+    .then(response => {
+        console.log('Gemma response status:', response.status);
+        console.log('Gemma response content-type:', response.headers.get('content-type'));
+        
+        if (!response.ok) {
+            throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+        }
+        
+        // Check if response is JSON
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            throw new Error('Server returned non-JSON response (likely 404 or error page)');
+        }
+        
+        return response.json();
+    })
+    .then(data => {
+        console.log('Gemma response data:', data);
+        if (data.success) {
+            displayForensicDossier(data);
+        } else {
+            document.getElementById('gemmaDossierContent').innerHTML = `
+                <div class="alert alert-danger">
+                    <h5><i class="bi bi-exclamation-triangle-fill"></i> Analysis Failed</h5>
+                    <p><strong>${data.error || 'Unknown error'}</strong></p>
+                    <p>${data.message || 'Please try again.'}</p>
+                    ${data.error === 'Gemma model not found' ? `
+                        <hr>
+                        <h6>Setup Instructions:</h6>
+                        <ol>
+                            <li>Install Gemma: <code>ollama pull gemma3:4b</code></li>
+                            <li>Or use Gemma 2: <code>ollama pull gemma2</code></li>
+                            <li>Restart Ollama and try again</li>
+                        </ol>
+                    ` : ''}
+                </div>
+            `;
+        }
+    })
+    .catch(error => {
+        console.error('Gemma analysis error:', error);
+        document.getElementById('gemmaDossierContent').innerHTML = `
+            <div class="alert alert-danger">
+                <h5><i class="bi bi-x-circle-fill"></i> Network Error</h5>
+                <p>Failed to connect to Gemma service: ${error.message}</p>
+            </div>
+        `;
+    });
+}
+
+/**
+ * Display Forensic Dossier in Official Document Style
+ */
+function displayForensicDossier(data) {
+    const caseId = data.case_id;
+    const narrative = data.risk_narrative;
+    const summary = data.network_summary;
+    const typologies = data.typologies_detected || [];
+    
+    // Format typology badges
+    const typologyBadges = typologies.map(t => 
+        `<span class="badge bg-danger me-2 mb-2">${t}</span>`
+    ).join('');
+    
+    // Format narrative sections
+    let formattedNarrative = narrative
+        .replace(/## (.+)/g, '<h5 class="mt-4 text-warning border-bottom pb-2"><i class="bi bi-file-earmark-text"></i> $1</h5>')
+        .replace(/### (.+)/g, '<h6 class="mt-3 text-secondary">$1</h6>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\n\n/g, '</p><p>')
+        .replace(/^- (.+)$/gm, '<li>$1</li>');
+    
+    const dossierHTML = `
+        <div class="official-document">
+            <!-- Header Banner -->
+            <div class="alert alert-danger text-center mb-4">
+                <h5 class="mb-0"><i class="bi bi-shield-fill-exclamation"></i> CONFIDENTIAL - CBK COMPLIANCE USE ONLY</h5>
+            </div>
+            
+            <!-- Case Header -->
+            <div class="card bg-dark mb-3">
+                <div class="card-body">
+                    <h4 class="text-warning mb-3">
+                        <i class="bi bi-file-earmark-medical"></i> NATIONAL SECURITY FORENSIC DOSSIER
+                    </h4>
+                    <table class="table table-sm table-dark table-borderless mb-0">
+                        <tr>
+                            <td class="text-warning"><strong>Case ID:</strong></td>
+                            <td>${caseId}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-warning"><strong>Evidence Timestamp:</strong></td>
+                            <td>${data.evidence_timestamp}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-warning"><strong>Generated By:</strong></td>
+                            <td>${data.officer_name} (${data.officer_role})</td>
+                        </tr>
+                        <tr>
+                            <td class="text-warning"><strong>Verification Status:</strong></td>
+                            <td><span class="badge bg-success">${data.verification_status}</span></td>
+                        </tr>
+                        <tr>
+                            <td class="text-warning"><strong>CBK Reporting Required:</strong></td>
+                            <td>${data.cbk_reporting_required ? '<span class="badge bg-danger">YES</span>' : '<span class="badge bg-secondary">NO</span>'}</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- Typologies Detected -->
+            <div class="card bg-dark mb-3">
+                <div class="card-header bg-danger">
+                    <h6 class="mb-0 text-white"><i class="bi bi-exclamation-diamond"></i> TYPOLOGIES IDENTIFIED</h6>
+                </div>
+                <div class="card-body">
+                    ${typologyBadges || '<span class="text-secondary">No specific typologies detected</span>'}
+                </div>
+            </div>
+            
+            <!-- Network Summary -->
+            <div class="card bg-dark mb-3">
+                <div class="card-header bg-warning text-dark">
+                    <h6 class="mb-0"><i class="bi bi-graph-up"></i> NETWORK SUMMARY (QUANTITATIVE EVIDENCE)</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <div class="p-2 bg-secondary bg-opacity-25 rounded">
+                                <small class="text-secondary d-block">Total Entities</small>
+                                <strong class="text-warning">${summary.total_entities || 0}</strong>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="p-2 bg-secondary bg-opacity-25 rounded">
+                                <small class="text-secondary d-block">Total Transactions</small>
+                                <strong class="text-warning">${summary.total_transactions || 0}</strong>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="p-2 bg-secondary bg-opacity-25 rounded">
+                                <small class="text-secondary d-block">Total Volume (USD)</small>
+                                <strong class="text-success">$${(summary.total_volume_usd || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}</strong>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="p-2 bg-secondary bg-opacity-25 rounded">
+                                <small class="text-secondary d-block">Critical Risk Alerts</small>
+                                <strong class="text-danger">${summary.critical_risk_count || 0}</strong>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="p-2 bg-secondary bg-opacity-25 rounded">
+                                <small class="text-secondary d-block">Smurfing Patterns</small>
+                                <strong>${summary.smurfing_patterns || 0}</strong>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="p-2 bg-secondary bg-opacity-25 rounded">
+                                <small class="text-secondary d-block">Layering Patterns</small>
+                                <strong>${summary.layering_patterns || 0}</strong>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="p-2 bg-secondary bg-opacity-25 rounded">
+                                <small class="text-secondary d-block">Structuring Attempts</small>
+                                <strong>${summary.structuring_attempts || 0}</strong>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Forensic Risk Narrative -->
+            <div class="card bg-dark mb-3">
+                <div class="card-header bg-info text-dark">
+                    <h6 class="mb-0"><i class="bi bi-chat-square-text"></i> FORENSIC RISK NARRATIVE</h6>
+                </div>
+                <div class="card-body narrative-content">
+                    <p class="text-info fst-italic mb-3">
+                        <small>Generated by Gemma AI Reasoning Engine (${data.model_used}) - Sovereignty-Compliant Analysis</small>
+                    </p>
+                    ${formattedNarrative}
+                </div>
+            </div>
+            
+            <!-- Action Buttons -->
+            <div class="text-center mt-4">
+                <button class="btn btn-danger" onclick="exportForensicPDF('${caseId}')">
+                    <i class="bi bi-file-earmark-pdf"></i> Export as PDF
+                </button>
+                <button class="btn btn-secondary ms-2" onclick="closeGemmaPanel()">
+                    <i class="bi bi-x-lg"></i> Close
+                </button>
+            </div>
+            
+            <!-- Legal Disclaimer -->
+            <div class="alert alert-warning mt-4">
+                <small>
+                    <strong>Privacy Safeguards:</strong> All PII anonymized before AI processing (Sovereignty Compliance). 
+                    <strong>Officer Accountability:</strong> Generated by ${data.officer_name}. 
+                    <strong>Regulatory Authority:</strong> Kenya FRC | CBK.
+                </small>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('gemmaDossierContent').innerHTML = dossierHTML;
+}
+
+/**
+ * Export Forensic PDF
+ */
+function exportForensicPDF(caseId) {
+    window.location.href = `/export-forensic-pdf/${caseId}/`;
+}
+
+/**
+ * Close Gemma Side Panel
+ */
+function closeGemmaPanel() {
+    document.getElementById('gemmaSidePanel').classList.remove('show');
+}
 </script>
+
+<!-- Gemma Official Document Side-Panel -->
+<div id="gemmaSidePanel" class="gemma-side-panel">
+    <div class="side-panel-content">
+        <div class="side-panel-header">
+            <h5><i class="bi bi-shield-check"></i> FRC FORENSIC DOSSIER</h5>
+            <button type="button" class="btn-close btn-close-white" onclick="closeGemmaPanel()"></button>
+        </div>
+        <div class="side-panel-body" id="gemmaDossierContent">
+            <!-- Content will be dynamically loaded here -->
+        </div>
+    </div>
+</div>
+
+<style>
+/* Gemma Side-Panel Styles */
+.gemma-side-panel {
+    position: fixed;
+    top: 0;
+    right: -100%;
+    width: 700px;
+    height: 100vh;
+    background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+    box-shadow: -5px 0 25px rgba(0, 0, 0, 0.5);
+    transition: right 0.4s ease;
+    z-index: 9999;
+    overflow-y: auto;
+}
+
+.gemma-side-panel.show {
+    right: 0;
+}
+
+.side-panel-content {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.side-panel-header {
+    background: linear-gradient(135deg, #c9302c 0%, #d9534f 100%);
+    color: white;
+    padding: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 3px solid #ffc107;
+}
+
+.side-panel-header h5 {
+    margin: 0;
+    font-weight: bold;
+}
+
+.side-panel-body {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    color: #e0e0e0;
+}
+
+.official-document {
+    font-family: 'Courier New', Courier, monospace;
+    line-height: 1.6;
+}
+
+.narrative-content {
+    font-family: 'Georgia', serif;
+    font-size: 0.95rem;
+    line-height: 1.8;
+}
+
+.narrative-content p {
+    margin-bottom: 1rem;
+}
+
+.narrative-content ul, .narrative-content ol {
+    margin-left: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+    .gemma-side-panel {
+        width: 100%;
+    }
+}
+</style>
+
+</script>
+
+<!-- AI Forensic Report Modal -->
+<div class="modal fade" id="forensicReportModal" tabindex="-1" aria-labelledby="forensicReportModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-primary bg-opacity-10">
+                <h5 class="modal-title" id="forensicReportModalLabel">
+                    <i class="bi bi-magic"></i> AI Forensic Analysis Report
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="reportContent">
+                <!-- Report content will be dynamically loaded here -->
+            </div>
+        </div>
+    </div>
+</div>
 
 {% endblock %}
 

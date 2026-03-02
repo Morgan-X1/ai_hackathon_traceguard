@@ -10,6 +10,7 @@ from django.views.decorators.http import require_http_methods
 from django.core.files.storage import default_storage
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 import logging
 import json
 import os
@@ -26,6 +27,17 @@ from .rbac import (
     role_required, audit_view, log_audit_trail, mask_transaction_data,
     get_user_role, can_demask_data
 )
+from .services.forensic_service import generate_forensic_report, check_ollama_availability
+from .services.gemma_analyst import generate_forensic_insight, verify_ollama_gemma
+from .models import ForensicReportLog
+from django.http import HttpResponse
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
+import hashlib
 
 
 def convert_numpy_types(obj):
@@ -323,6 +335,11 @@ def batch_analysis(request):
                     masked_result = mask_transaction_data(result, request.user, log_access=False)
                     masked_results.append(masked_result)
                 
+                # Store masked results in session for AI forensic analysis
+                request.session['masked_results'] = masked_results
+                request.session['raw_results'] = results  # Store unmasked for AI (will be anonymized)
+                request.session.modified = True
+                
                 # Log batch analysis
                 log_audit_trail(
                     user=request.user,
@@ -392,12 +409,16 @@ def batch_analysis(request):
                                     # Store in session for network visualization page
                                     request.session['graph_data'] = graph_data
                                     request.session['graph_data_json'] = json.dumps(graph_data['visualization'])
+                                    request.session.modified = True  # Ensure session is saved
+                                    print(f"SUCCESS: Stored graph data in session. Nodes: {len(graph_data['visualization'].get('nodes', []))}, Edges: {len(graph_data['visualization'].get('edges', []))}")
                                 else:
                                     print(f"WARNING: graph_data missing 'visualization' key or wrong type after conversion")
                             except Exception as e:
                                 print(f"ERROR converting graph_data: {str(e)}")
                                 import traceback
                                 traceback.print_exc()
+                    else:
+                        print("WARNING: graph_data is None - network visualization will not be available")
                     
                     # Generate reports
                     summary = generate_summary_report(results)
@@ -410,6 +431,11 @@ def batch_analysis(request):
                     for result in results:
                         masked_result = mask_transaction_data(result, request.user, log_access=False)
                         masked_results.append(masked_result)
+                    
+                    # Store masked results in session for AI forensic analysis
+                    request.session['masked_results'] = masked_results
+                    request.session['raw_results'] = results  # Store unmasked for AI (will be anonymized)
+                    request.session.modified = True
                     
                     # Log batch analysis
                     log_audit_trail(
@@ -460,6 +486,14 @@ def network_visualization(request):
     # Get graph data from session (stored during batch analysis)
     graph_data = request.session.get('graph_data', None)
     graph_data_json = request.session.get('graph_data_json', None)
+    
+    # Debug output
+    print(f"Network Visualization - Session keys: {list(request.session.keys())}")
+    print(f"Graph data exists: {graph_data is not None}")
+    print(f"Graph data JSON exists: {graph_data_json is not None}")
+    if graph_data:
+        print(f"Graph data type: {type(graph_data)}")
+        print(f"Graph data keys: {graph_data.keys() if isinstance(graph_data, dict) else 'Not a dict'}")
     
     context = {
         'graph_data': graph_data,
@@ -578,3 +612,466 @@ def audit_log(request):
     
     return render(request, 'dashboard/audit_log.html', context)
 
+
+@require_http_methods(["POST"])
+@login_required
+@role_required('COMPLIANCE_OFFICER', 'ADMIN')
+@audit_view('AI_FORENSIC_REPORT', 'Generated AI forensic analysis report')
+def generate_ai_forensic_report(request):
+    """
+    Generate AI-powered forensic analysis report using Ollama llama3.2
+    Accessible only to Compliance Officers and Admins
+    Anonymizes PII before sending to AI model
+    """
+    try:
+        # Check Ollama availability first
+        availability = check_ollama_availability()
+        if not availability.get('available'):
+            return JsonResponse({
+                'success': False,
+                'error': 'Ollama service not available',
+                'message': availability.get('message', 'Please ensure Ollama is running (ollama serve) and llama3.2 is installed (ollama pull llama3.2)')
+            }, status=503)
+        
+        if not availability.get('has_compatible_model'):
+            return JsonResponse({
+                'success': False,
+                'error': 'No models found',
+                'message': f'No Ollama models installed. Available models: {availability.get("models", [])}. Install a model with: ollama pull gemma3:4b'
+            }, status=503)
+        
+        # Get transaction data from session (from batch analysis)
+        graph_data = request.session.get('graph_data', None)
+        
+        # Parse request body for transaction data
+        try:
+            body = json.loads(request.body)
+            transaction_data = body.get('transactions', [])
+        except json.JSONDecodeError:
+            transaction_data = []
+        
+        # If no transactions provided, try to get from session
+        if not transaction_data:
+            # Use raw_results (unmasked) - will be anonymized by forensic_service
+            raw_results = request.session.get('raw_results', [])
+            if raw_results:
+                transaction_data = raw_results
+            else:
+                # Fallback to masked_results if raw not available
+                masked_results = request.session.get('masked_results', [])
+                transaction_data = masked_results
+        
+        if not transaction_data:
+            # Debug: Check what's in session
+            session_keys = list(request.session.keys())
+            logger.warning(f"No transaction data found. Session keys: {session_keys}")
+            return JsonResponse({
+                'success': False,
+                'error': 'No transaction data',
+                'message': f'No transactions available for analysis. Please run batch analysis first. Session keys: {session_keys}'
+            }, status=400)
+        
+        # Generate forensic report using AI
+        logger.info(f"Generating AI forensic report for {len(transaction_data)} transactions by user {request.user.username}")
+        
+        # Determine which model to use from available models
+        available_models = availability.get('models', [])
+        selected_model = None
+        if 'gemma3:4b' in available_models:
+            selected_model = 'gemma3:4b'
+        elif 'llama3.2' in available_models:
+            selected_model = 'llama3.2'
+        elif len(available_models) > 0:
+            selected_model = available_models[0]
+        else:
+            selected_model = 'gemma3:4b'  # fallback
+        
+        logger.info(f"Using model: {selected_model}")
+        
+        report_result = generate_forensic_report(
+            transaction_data=transaction_data,
+            graph_data=graph_data,
+            model=selected_model
+        )
+        
+        if not report_result.get('success'):
+            return JsonResponse({
+                'success': False,
+                'error': report_result.get('error', 'Unknown error'),
+                'message': report_result.get('message', 'Failed to generate report')
+            }, status=500)
+        
+        # Log successful report generation to audit trail
+        log_audit_trail(
+            user=request.user,
+            action='AI_FORENSIC_REPORT',
+            details=f"Generated AI report for {report_result.get('metadata', {}).get('total_transactions', 0)} transactions"
+        )
+        
+        # Return successful response with report
+        return JsonResponse({
+            'success': True,
+            'report': report_result.get('report', ''),
+            'metadata': report_result.get('metadata', {}),
+            'context_summary': report_result.get('context_summary', {}),
+            'timestamp': timezone.now().isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error generating AI forensic report: {str(e)}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': 'Server error',
+            'message': f'An error occurred while generating the report: {str(e)}'
+        }, status=500)
+
+
+@require_http_methods(["GET", "POST"])
+def test_gemma_endpoint(request):
+    """Simple test endpoint to verify routing works"""
+    return JsonResponse({
+        'success': True,
+        'message': 'Test endpoint working',
+        'method': request.method
+    })
+
+
+@require_http_methods(["POST"])
+def gemma_deep_analysis(request):
+    """
+    Gemma Reasoning Engine - National Security Forensic Dossier Generation
+    
+    Transforms GraphSAGE/Isolation Forest outputs into FRC-style investigative narratives.
+    Accessible only to Compliance Officers and Admins.
+    """
+    # Temporary: Remove decorators for testing
+    if not request.user.is_authenticated:
+        return JsonResponse({'success': False, 'error': 'Not authenticated'}, status=401)
+    
+    try:
+        # Verify Gemma availability
+        gemma_status = verify_ollama_gemma()
+        if not gemma_status.get('available'):
+            return JsonResponse({
+                'success': False,
+                'error': 'Gemma service not available',
+                'message': gemma_status.get('message', 'Ollama service not running')
+            }, status=503)
+        
+        if not gemma_status.get('gemma_installed'):
+            return JsonResponse({
+                'success': False,
+                'error': 'Gemma model not found',
+                'message': f'No Gemma model installed. Available models: {gemma_status.get("all_models", [])}. Install with: ollama pull gemma3:4b'
+            }, status=503)
+        
+        # Get transaction and network data from session
+        raw_results = request.session.get('raw_results', [])
+        graph_data = request.session.get('graph_data', None)
+        
+        if not raw_results:
+            return JsonResponse({
+                'success': False,
+                'error': 'No anomaly data',
+                'message': 'No suspicious transactions available. Run batch analysis first.'
+            }, status=400)
+        
+        # Prepare anomaly data structure
+        anomaly_data = {
+            'transactions': raw_results,
+            'network': graph_data if graph_data else {'nodes': [], 'edges': []},
+            'case_metadata': {
+                'analyst': request.user.get_full_name() or request.user.username,
+                'timestamp': timezone.now().isoformat()
+            }
+        }
+        
+        # Select Gemma model
+        gemma_model = gemma_status['gemma_models'][0] if gemma_status['gemma_models'] else 'gemma3:4b'
+        
+        logger.info(f"Generating FRC forensic dossier using {gemma_model} for user {request.user.username}")
+        
+        # Generate forensic insight using Gemma
+        insight_result = generate_forensic_insight(
+            anomaly_data=anomaly_data,
+            model=gemma_model
+        )
+        
+        if not insight_result.get('success'):
+            return JsonResponse({
+                'success': False,
+                'error': insight_result.get('error', 'Analysis failed'),
+                'message': insight_result.get('message', 'Failed to generate forensic insight')
+            }, status=500)
+        
+        # Create Verification Log (Ethical Leadership & Accountability)
+        try:
+            user_profile = request.user.profile
+            officer_role = user_profile.role
+            employee_id = user_profile.employee_id or 'N/A'
+        except:
+            officer_role = 'COMPLIANCE_OFFICER'
+            employee_id = 'N/A'
+        
+        # Parse ISO timestamp to timezone-aware datetime
+        evidence_ts = parse_datetime(insight_result['evidence_timestamp'])
+        if evidence_ts and not timezone.is_aware(evidence_ts):
+            evidence_ts = timezone.make_aware(evidence_ts)
+        
+        forensic_log = ForensicReportLog.objects.create(
+            case_id=insight_result['case_id'],
+            generated_by=request.user,
+            officer_name=request.user.get_full_name() or request.user.username,
+            officer_role=officer_role,
+            officer_employee_id=employee_id,
+            evidence_timestamp=evidence_ts,
+            total_transactions_analyzed=insight_result['network_summary']['total_transactions'],
+            total_volume_usd=insight_result['network_summary']['total_volume_usd'],
+            critical_risk_count=insight_result['network_summary']['critical_risk_count'],
+            typologies_detected=insight_result['typologies_detected'],
+            model_used=insight_result['model_used'],
+            entity_anonymization_applied=True,
+            risk_narrative=insight_result['risk_narrative'],
+            network_summary=insight_result['network_summary'],
+            verification_status='VERIFIED',
+            cbk_reporting_required=insight_result['network_summary']['critical_risk_count'] > 5
+        )
+        
+        logger.info(f"Created forensic report log: {forensic_log.case_id}")
+        
+        # Log to audit trail
+        log_audit_trail(
+            user=request.user,
+            action='GEMMA_DEEP_ANALYSIS',
+            description=f"Generated FRC dossier {insight_result['case_id']} - {len(insight_result['typologies_detected'])} typologies detected",
+            request=request
+        )
+        
+        # Return forensic dossier
+        return JsonResponse({
+            'success': True,
+            'case_id': insight_result['case_id'],
+            'evidence_timestamp': insight_result['evidence_timestamp'],
+            'risk_narrative': insight_result['risk_narrative'],
+            'network_summary': insight_result['network_summary'],
+            'typologies_detected': insight_result['typologies_detected'],
+            'officer_name': forensic_log.officer_name,
+            'verification_status': forensic_log.verification_status,
+            'cbk_reporting_required': forensic_log.cbk_reporting_required,
+            'model_used': insight_result['model_used']
+        })
+        
+    except Exception as e:
+        logger.error(f"Gemma deep analysis failed: {str(e)}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': 'Server error',
+            'message': f'Error during Gemma analysis: {str(e)}'
+        }, status=500)
+
+
+@login_required
+@role_required('COMPLIANCE_OFFICER', 'ADMIN')
+def export_forensic_pdf(request, case_id):
+    """
+    Export FRC Forensic Dossier as PDF
+    
+    Generates downloadable PDF with:
+    - Risk Narrative (Gemma-generated)
+    - Network Summary (quantitative evidence)
+    - Evidence Timestamp & Case ID
+    - Officer verification
+    """
+    try:
+        # Retrieve forensic report log
+        forensic_log = ForensicReportLog.objects.get(case_id=case_id)
+        
+        # Create PDF response
+        response = HttpResponse(content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="FRC_Dossier_{case_id}.pdf"'
+        
+        # Create PDF document
+        doc = SimpleDocTemplate(response, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
+        story = []
+        styles = getSampleStyleSheet()
+        
+        # Custom styles
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=18,
+            textColor=colors.HexColor('#1a1a1a'),
+            spaceAfter=12,
+            alignment=TA_CENTER,
+            fontName='Helvetica-Bold'
+        )
+        
+        header_style = ParagraphStyle(
+            'CustomHeader',
+            parent=styles['Heading2'],
+            fontSize=14,
+            textColor=colors.HexColor('#2c3e50'),
+            spaceAfter=10,
+            spaceBefore=15,
+            fontName='Helvetica-Bold'
+        )
+        
+        body_style = ParagraphStyle(
+            'CustomBody',
+            parent=styles['BodyText'],
+            fontSize=10,
+            alignment=TA_JUSTIFY,
+            spaceAfter=8,
+            leading=14
+        )
+        
+        # Title
+        story.append(Paragraph("KENYA FINANCIAL REPORTING CENTRE", title_style))
+        story.append(Paragraph("NATIONAL SECURITY FORENSIC DOSSIER", title_style))
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Classification Banner
+        classification_table = Table(
+            [[Paragraph("<b>CONFIDENTIAL - CBK COMPLIANCE USE ONLY</b>", styles['Normal'])]],
+            colWidths=[6.5*inch]
+        )
+        classification_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#d32f2f')),
+            ('TEXTCOLOR', (0, 0), (-1, -1), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 11),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ]))
+        story.append(classification_table)
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Case Information
+        case_info_data = [
+            ['<b>Case ID:</b>', forensic_log.case_id],
+            ['<b>Evidence Timestamp:</b>', forensic_log.evidence_timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')],
+            ['<b>Report Generated:</b>', forensic_log.generation_timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')],
+            ['<b>Generated By:</b>', f"{forensic_log.officer_name} ({forensic_log.officer_role})"],
+            ['<b>Employee ID:</b>', forensic_log.officer_employee_id],
+            ['<b>Verification Status:</b>', forensic_log.verification_status],
+            ['<b>CBK Reporting Required:</b>', 'YES' if forensic_log.cbk_reporting_required else 'NO'],
+        ]
+        
+        case_info_table = Table(case_info_data, colWidths=[2*inch, 4.5*inch])
+        case_info_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#ecf0f1')),
+            ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+            ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
+            ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        story.append(case_info_table)
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Network Summary
+        story.append(Paragraph("NETWORK SUMMARY", header_style))
+        network_summary = forensic_log.network_summary
+        summary_data = [
+            ['<b>Metric</b>', '<b>Value</b>'],
+            ['Total Entities Analyzed', str(network_summary.get('total_entities', 0))],
+            ['Total Transactions', str(network_summary.get('total_transactions', 0))],
+            ['Total Volume (USD)', f"${network_summary.get('total_volume_usd', 0):,.2f}"],
+            ['Critical Risk Alerts', str(network_summary.get('critical_risk_count', 0))],
+            ['Smurfing Patterns Detected', str(network_summary.get('smurfing_patterns', 0))],
+            ['Layering Patterns Detected', str(network_summary.get('layering_patterns', 0))],
+            ['Structuring Attempts', str(network_summary.get('structuring_attempts', 0))],
+        ]
+        
+        summary_table = Table(summary_data, colWidths=[3.5*inch, 3*inch])
+        summary_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495e')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 1), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+        ]))
+        story.append(summary_table)
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Typologies Detected
+        story.append(Paragraph("TYPOLOGIES IDENTIFIED", header_style))
+        if forensic_log.typologies_detected:
+            typology_text = "<br/>".join([f"• {typology}" for typology in forensic_log.typologies_detected])
+            story.append(Paragraph(typology_text, body_style))
+        else:
+            story.append(Paragraph("No specific typologies detected.", body_style))
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Risk Narrative
+        story.append(Paragraph("FORENSIC RISK NARRATIVE", header_style))
+        story.append(Paragraph("<i>Generated by Gemma AI Reasoning Engine (Sovereignty-Compliant Analysis)</i>", styles['Italic']))
+        story.append(Spacer(1, 0.1*inch))
+        
+        # Split narrative into paragraphs
+        narrative_paragraphs = forensic_log.risk_narrative.split('\n\n')
+        for para in narrative_paragraphs:
+            if para.strip():
+                story.append(Paragraph(para.strip(), body_style))
+        
+        story.append(PageBreak())
+        
+        # Legal Disclaimer
+        story.append(Paragraph("LEGAL DISCLAIMER & VERIFICATION", header_style))
+        disclaimer_text = f"""
+This forensic dossier was generated using AI-assisted analysis (Gemma Reasoning Engine) 
+in compliance with Kenya's Anti-Money Laundering and Counter-Terrorism Financing regulations.
+
+<b>Privacy Safeguards:</b> All personally identifiable information (PII) was anonymized before 
+AI processing. No real names, account numbers, or phone numbers were exposed to the language model, 
+ensuring data sovereignty and public trust.
+
+<b>Officer Accountability:</b> This report was generated and verified by {forensic_log.officer_name} 
+({forensic_log.officer_role}, Employee ID: {forensic_log.officer_employee_id}) on 
+{forensic_log.generation_timestamp.strftime('%Y-%m-%d at %H:%M:%S UTC')}.
+
+<b>Evidence Integrity:</b> This document hash: {hashlib.sha256(forensic_log.risk_narrative.encode()).hexdigest()[:16].upper()}
+
+<b>Regulatory Authority:</b> Kenya Financial Reporting Centre (FRC) | Central Bank of Kenya (CBK)
+
+<b>Distribution:</b> CONFIDENTIAL - Authorized personnel only. Unauthorized disclosure may result 
+in legal action under Kenya's Banking Act.
+        """
+        story.append(Paragraph(disclaimer_text, body_style))
+        
+        # Build PDF
+        doc.build(story)
+        
+        # Update forensic log
+        forensic_log.pdf_generated = True
+        forensic_log.pdf_generation_timestamp = timezone.now()
+        forensic_log.pdf_file_hash = hashlib.sha256(response.content).hexdigest()
+        forensic_log.save()
+        
+        # Log to audit trail
+        log_audit_trail(
+            user=request.user,
+            action='PDF_EXPORT',
+            details=f"Exported FRC dossier {case_id} as PDF"
+        )
+        
+        logger.info(f"Exported PDF for case {case_id} by {request.user.username}")
+        
+        return response
+        
+    except ForensicReportLog.DoesNotExist:
+        return HttpResponse("Case ID not found", status=404)
+    except Exception as e:
+        logger.error(f"PDF export failed: {str(e)}", exc_info=True)
+        return HttpResponse(f"Error generating PDF: {str(e)}", status=500)

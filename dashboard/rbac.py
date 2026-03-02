@@ -126,7 +126,7 @@ def mask_transaction_data(transaction_dict, user, log_access=True):
     """
     if not user.is_authenticated:
         # Completely mask for unauthenticated users
-        return {**transaction_dict, '_masked': True, '_demask_allowed': False}
+        return {**transaction_dict, 'is_masked': True, 'can_demask': False}
     
     role = get_user_role(user)
     risk_score = transaction_dict.get('risk_score', 0)
@@ -147,12 +147,12 @@ def mask_transaction_data(transaction_dict, user, log_access=True):
                 else:
                     masked_data[field] = mask_sensitive_field(masked_data[field], 'account')
         
-        masked_data['_masked'] = True
-        masked_data['_demask_allowed'] = can_demask
+        masked_data['is_masked'] = True
+        masked_data['can_demask'] = can_demask
     else:
         # Admin or Compliance Officer with sufficient risk score
-        masked_data['_masked'] = False
-        masked_data['_demask_allowed'] = False  # Already demasked
+        masked_data['is_masked'] = False
+        masked_data['can_demask'] = False  # Already demasked
     
     # Log access if requested
     if log_access and hasattr(user, 'profile'):
