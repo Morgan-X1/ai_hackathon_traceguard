@@ -29,7 +29,7 @@ from .rbac import (
 )
 from .services.forensic_service import generate_forensic_report, check_ollama_availability
 from .services.gemma_analyst import generate_forensic_insight, verify_ollama_gemma
-from .models import ForensicReportLog
+from .models import ForensicReportLog, AnalysisRecord
 from django.http import HttpResponse
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter, A4
@@ -839,6 +839,35 @@ def gemma_deep_analysis(request):
         
         logger.info(f"Created forensic report log: {forensic_log.case_id}")
         
+        # Create Analysis Record for accountability and case history
+        # Extract primary target account from network data
+        target_accounts = []
+        if graph_data and graph_data.get('nodes'):
+            # Get accounts with highest risk scores
+            nodes_sorted = sorted(
+                graph_data['nodes'],
+                key=lambda x: x.get('risk', 0),
+                reverse=True
+            )
+            target_accounts = [node['id'] for node in nodes_sorted[:5]]  # Top 5 risky accounts
+        
+        # Create analysis records for each target account
+        for idx, account_id in enumerate(target_accounts):
+            AnalysisRecord.objects.create(
+                officer=request.user,
+                target_account=account_id,
+                gemma_summary=insight_result['risk_narrative'],
+                risk_score=insight_result['network_summary']['critical_risk_count'] * 10,  # Normalize to 0-100
+                case_reference=insight_result['case_id'],
+                transaction_count=insight_result['network_summary']['total_transactions'],
+                total_amount_usd=insight_result['network_summary']['total_volume_usd'],
+                typologies_identified=insight_result['typologies_detected'],
+                network_connections=insight_result['network_summary'].get('total_entities', 0),
+                investigation_status='ONGOING'
+            )
+        
+        logger.info(f"Created {len(target_accounts)} analysis records for case {forensic_log.case_id}")
+        
         # Log to audit trail
         log_audit_trail(
             user=request.user,
@@ -1075,3 +1104,336 @@ in legal action under Kenya's Banking Act.
     except Exception as e:
         logger.error(f"PDF export failed: {str(e)}", exc_info=True)
         return HttpResponse(f"Error generating PDF: {str(e)}", status=500)
+
+
+@login_required
+@role_required('COMPLIANCE_OFFICER', 'ADMIN')
+def generate_investigation_report(request):
+    """
+    Generate a professional PDF investigation report for suspected accounts.
+    
+    Takes a list of suspected_account_ids and generates a comprehensive FRC-compliant
+    PDF report with officer details, account analysis, and risk assessments.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST method required'}, status=405)
+    
+    try:
+        # Parse request data
+        data = json.loads(request.body)
+        suspected_account_ids = data.get('suspected_account_ids', [])
+        
+        if not suspected_account_ids:
+            return JsonResponse({'success': False, 'error': 'No account IDs provided'}, status=400)
+        
+        # Get analysis records for these accounts (created by current officer)
+        analysis_records = AnalysisRecord.objects.filter(
+            officer=request.user,
+            target_account__in=suspected_account_ids
+        ).order_by('-risk_score')
+        
+        if not analysis_records.exists():
+            return JsonResponse({
+                'success': False,
+                'error': 'No analysis records found for the specified accounts'
+            }, status=404)
+        
+        # Generate PDF
+        response = HttpResponse(content_type='application/pdf')
+        timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'TraceGuard_Investigation_Report_{timestamp}.pdf'
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        
+        # Create PDF document
+        doc = SimpleDocTemplate(response, pagesize=letter,
+                                rightMargin=72, leftMargin=72,
+                                topMargin=72, bottomMargin=18)
+        
+        # Container for PDF elements
+        story = []
+        
+        # Styles
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=24,
+            textColor=colors.HexColor('#8B0000'),
+            spaceAfter=30,
+            alignment=TA_CENTER,
+            fontName='Helvetica-Bold'
+        )
+        
+        header_style = ParagraphStyle(
+            'CustomHeader',
+            parent=styles['Heading2'],
+            fontSize=16,
+            textColor=colors.HexColor('#2C3E50'),
+            spaceAfter=12,
+            fontName='Helvetica-Bold'
+        )
+        
+        body_style = ParagraphStyle(
+            'CustomBody',
+            parent=styles['BodyText'],
+            fontSize=11,
+            leading=14,
+            spaceAfter=12
+        )
+        
+        # Header Section
+        story.append(Paragraph("TraceGuard AI", title_style))
+        story.append(Paragraph("Confidential Forensic Report", title_style))
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Classification Banner
+        classification_table = Table(
+            [['CONFIDENTIAL - FOR FRC COMPLIANCE AUDIT ONLY']],
+            colWidths=[6.5*inch]
+        )
+        classification_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.red),
+            ('TEXTCOLOR', (0, 0), (-1, -1), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 14),
+            ('TOPPADDING', (0, 0), (-1, -1), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+        ]))
+        story.append(classification_table)
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Officer Details Section
+        story.append(Paragraph("Investigating Officer Details", header_style))
+        
+        officer_name = request.user.get_full_name() or request.user.username
+        officer_role = get_user_role(request.user)
+        
+        try:
+            from .models import UserProfile
+            user_profile = UserProfile.objects.get(user=request.user)
+            employee_id = user_profile.employee_id or 'N/A'
+        except:
+            employee_id = 'N/A'
+        
+        officer_data = [
+            ['Investigating Officer:', officer_name],
+            ['Role:', officer_role],
+            ['Employee ID:', employee_id],
+            ['Report Generated:', timezone.now().strftime('%Y-%m-%d %H:%M:%S UTC')],
+            ['Number of Accounts:', str(analysis_records.count())]
+        ]
+        
+        officer_table = Table(officer_data, colWidths=[2*inch, 4.5*inch])
+        officer_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#E8E8E8')),
+            ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+        ]))
+        story.append(officer_table)
+        story.append(Spacer(1, 0.4*inch))
+        
+        # Suspected Accounts Analysis Section
+        story.append(Paragraph("Suspected Accounts Analysis", header_style))
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Build accounts table
+        account_table_data = [[
+            'Account ID',
+            'Risk Score',
+            'Status',
+            'Typologies',
+            'Key Risk Factors'
+        ]]
+        
+        for record in analysis_records:
+            # Truncate summary for table display
+            risk_factors = record.gemma_summary[:150] + '...' if len(record.gemma_summary) > 150 else record.gemma_summary
+            typologies = ', '.join(record.typologies_identified[:3]) if record.typologies_identified else 'N/A'
+            
+            account_table_data.append([
+                record.target_account,
+                f"{record.risk_score:.1f}",
+                record.investigation_status,
+                typologies,
+                risk_factors
+            ])
+        
+        account_table = Table(account_table_data, colWidths=[1.2*inch, 0.8*inch, 1*inch, 1.5*inch, 2*inch])
+        account_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495E')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+            ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('TOPPADDING', (0, 1), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ]))
+        story.append(account_table)
+        story.append(Spacer(1, 0.4*inch))
+        
+        # Detailed Analysis for Each Account
+        story.append(PageBreak())
+        story.append(Paragraph("Detailed Account Analysis", header_style))
+        story.append(Spacer(1, 0.2*inch))
+        
+        for idx, record in enumerate(analysis_records, 1):
+            # Account header
+            account_header = f"Account {idx}: {record.target_account}"
+            story.append(Paragraph(account_header, ParagraphStyle(
+                'AccountHeader',
+                parent=styles['Heading3'],
+                fontSize=14,
+                textColor=colors.HexColor('#8B0000'),
+                spaceAfter=10,
+                fontName='Helvetica-Bold'
+            )))
+            
+            # Account metrics
+            metrics_data = [
+                ['Risk Score:', f"{record.risk_score:.2f}"],
+                ['Transaction Count:', str(record.transaction_count)],
+                ['Total Amount (USD):', f"${record.total_amount_usd:,.2f}"],
+                ['Network Connections:', str(record.network_connections)],
+                ['Investigation Status:', record.investigation_status],
+                ['Analysis Date:', record.created_at.strftime('%Y-%m-%d %H:%M:%S')]
+            ]
+            
+            metrics_table = Table(metrics_data, colWidths=[2*inch, 4.5*inch])
+            metrics_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#F0F0F0')),
+                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 10),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ]))
+            story.append(metrics_table)
+            story.append(Spacer(1, 0.2*inch))
+            
+            # Typologies detected
+            if record.typologies_identified:
+                story.append(Paragraph("<b>Typologies Identified:</b>", body_style))
+                for typology in record.typologies_identified:
+                    story.append(Paragraph(f"• {typology}", body_style))
+                story.append(Spacer(1, 0.1*inch))
+            
+            # Gemma AI Analysis
+            story.append(Paragraph("<b>AI Forensic Analysis:</b>", body_style))
+            story.append(Paragraph(record.gemma_summary, body_style))
+            
+            if idx < analysis_records.count():
+                story.append(Spacer(1, 0.3*inch))
+                story.append(Paragraph("—" * 60, body_style))
+                story.append(Spacer(1, 0.3*inch))
+        
+        # Footer Section
+        story.append(PageBreak())
+        story.append(Paragraph("Report Summary & Recommendations", header_style))
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Calculate summary statistics
+        total_risk = sum(r.risk_score for r in analysis_records)
+        avg_risk = total_risk / analysis_records.count()
+        high_risk_count = analysis_records.filter(risk_score__gte=75).count()
+        
+        summary_text = f"""
+        This investigation report covers {analysis_records.count()} suspected accounts identified through 
+        TraceGuard AI's machine learning analysis. The average risk score across all accounts is {avg_risk:.2f}, 
+        with {high_risk_count} accounts classified as high-risk (score ≥ 75).
+        <br/><br/>
+        <b>Recommended Actions:</b><br/>
+        • Escalate high-risk accounts to the Financial Reporting Centre (FRC) for further investigation<br/>
+        • Request enhanced due diligence documentation for accounts with complex network patterns<br/>
+        • Monitor ongoing transactions for accounts under investigation<br/>
+        • Coordinate with law enforcement if criminal activity is suspected<br/>
+        <br/>
+        <b>Legal Disclaimer:</b><br/>
+        This report is generated for compliance purposes under the Kenya Financial Reporting Centre Act 
+        and the Proceeds of Crime and Anti-Money Laundering Act. All information contained herein is 
+        confidential and intended solely for authorized personnel. Unauthorized disclosure may result 
+        in legal consequences.
+        <br/><br/>
+        <b>Document Integrity:</b><br/>
+        Generated by TraceGuard AI • Report ID: {timestamp} • Officer: {officer_name}
+        """
+        
+        story.append(Paragraph(summary_text, body_style))
+        
+        # Build PDF
+        doc.build(story)
+        
+        # Update analysis records
+        for record in analysis_records:
+            record.report_generated = True
+            record.report_generated_at = timezone.now()
+            record.report_download_count += 1
+            record.save()
+        
+        # Log to audit trail
+        log_audit_trail(
+            user=request.user,
+            action='INVESTIGATION_REPORT_GENERATED',
+            description=f"Generated investigation report for {len(suspected_account_ids)} accounts",
+            request=request
+        )
+        
+        logger.info(f"Generated investigation report for {len(suspected_account_ids)} accounts by {request.user.username}")
+        
+        return response
+        
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        logger.error(f"Investigation report generation failed: {str(e)}", exc_info=True)
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@login_required
+def get_recent_investigations(request):
+    """
+    API endpoint to get the last 5 analysis records for the current officer.
+    
+    Used for the "Recent Investigations" sidebar section to allow officers
+    to quickly access their case history.
+    """
+    try:
+        recent_records = AnalysisRecord.objects.filter(
+            officer=request.user
+        ).order_by('-created_at')[:5]
+        
+        records_data = []
+        for record in recent_records:
+            records_data.append({
+                'id': record.id,
+                'target_account': record.target_account,
+                'risk_score': float(record.risk_score),
+                'investigation_status': record.investigation_status,
+                'created_at': record.created_at.strftime('%Y-%m-%d %H:%M'),
+                'typologies': record.typologies_identified,
+                'transaction_count': record.transaction_count,
+                'report_generated': record.report_generated,
+                'case_reference': record.case_reference or 'N/A'
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'records': records_data,
+            'officer_name': request.user.get_full_name() or request.user.username
+        })
+        
+    except Exception as e:
+        logger.error(f"Failed to fetch recent investigations: {str(e)}", exc_info=True)
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)

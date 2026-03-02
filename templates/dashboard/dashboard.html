@@ -7,6 +7,11 @@
     <div class="col-12">
         <h1 class="mb-4">
             <i class="bi bi-shield-shaded"></i> AML Risk Assessment Dashboard
+            {% if user.is_authenticated and user.is_staff %}
+            <small class="text-success fs-6">
+                <i class="bi bi-person-badge"></i> Officer: {{ user.get_full_name|default:user.username }}
+            </small>
+            {% endif %}
         </h1>
     </div>
 </div>
@@ -26,6 +31,32 @@
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
     {% endfor %}
+{% endif %}
+
+<!-- Recent Investigations Sidebar (Only for authenticated staff) -->
+{% if user.is_authenticated and user.is_staff %}
+<div class="row mb-4">
+    <div class="col-lg-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-clock-history"></i> Recent Investigations
+                    <small class="text-muted">(Last 5 cases)</small>
+                </h5>
+            </div>
+            <div class="card-body">
+                <div id="recentInvestigationsContainer">
+                    <div class="text-center">
+                        <div class="spinner-border spinner-border-sm text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <span class="ms-2 text-muted">Loading recent investigations...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endif %}
 
 <div class="row">
@@ -387,6 +418,64 @@ const animateScore = setInterval(() => {
     }
     scoreElement.textContent = currentScore.toFixed(1);
 }, 20);
+{% endif %}
+
+// Load Recent Investigations
+{% if user.is_authenticated and user.is_staff %}
+loadRecentInvestigations();
+
+function loadRecentInvestigations() {
+    fetch('/api/recent-investigations/')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                displayRecentInvestigations(data.records);
+            }
+        })
+        .catch(error => console.error('Error loading recent investigations:', error));
+}
+
+function displayRecentInvestigations(records) {
+    const container = document.getElementById('recentInvestigationsContainer');
+    if (!container) return;
+    
+    if (records.length === 0) {
+        container.innerHTML = '<p class="text-muted small">No recent investigations</p>';
+        return;
+    }
+    
+    let html = '<div class="list-group list-group-flush">';
+    records.forEach(record => {
+        const riskBadge = record.risk_score >= 75 ? 'danger' : record.risk_score >= 50 ? 'warning' : 'success';
+        const statusBadge = record.investigation_status === 'COMPLETED' ? 'success' : 
+                           record.investigation_status === 'ESCALATED' ? 'danger' : 'primary';
+        
+        html += `
+            <a href="#" class="list-group-item list-group-item-action" onclick="viewInvestigation('${record.target_account}', event)">
+                <div class="d-flex w-100 justify-content-between">
+                    <h6 class="mb-1">${record.target_account}</h6>
+                    <small class="text-muted">${record.created_at}</small>
+                </div>
+                <div class="mb-1">
+                    <span class="badge bg-${riskBadge}">Risk: ${record.risk_score.toFixed(1)}</span>
+                    <span class="badge bg-${statusBadge}">${record.investigation_status}</span>
+                </div>
+                <small class="text-muted">
+                    ${record.transaction_count} transactions
+                    ${record.report_generated ? '<i class="bi bi-file-earmark-pdf text-success"></i>' : ''}
+                </small>
+            </a>
+        `;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+function viewInvestigation(accountId, event) {
+    event.preventDefault();
+    alert(`Viewing investigation for account: ${accountId}\n\nFeature: Load full investigation details`);
+    // TODO: Implement full investigation view modal
+}
 {% endif %}
 </script>
 {% endblock %}

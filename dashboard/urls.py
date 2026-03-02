@@ -16,6 +16,8 @@ urlpatterns = [
     path('api/gemma-deep-analysis/', views.gemma_deep_analysis, name='gemma_deep_analysis'),
     path('api/test-gemma/', views.test_gemma_endpoint, name='test_gemma'),  # Test endpoint
     path('export-forensic-pdf/<str:case_id>/', views.export_forensic_pdf, name='export_forensic_pdf'),
+    path('api/generate-investigation-report/', views.generate_investigation_report, name='generate_investigation_report'),
+    path('api/recent-investigations/', views.get_recent_investigations, name='recent_investigations'),
     path('audit-log/', views.audit_log, name='audit_log'),
     path('about/', views.about, name='about'),
 ]
