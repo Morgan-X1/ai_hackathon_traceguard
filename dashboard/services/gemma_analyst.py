@@ -60,21 +60,29 @@ def anonymize_entities(data: Dict[str, Any]) -> tuple[Dict[str, Any], Dict[str, 
         return entity_map[entity_id]
     
     # Anonymize transactions
-    for txn in data.get('transactions', []):
-        anon_txn = {
-            'sender': get_anonymous_id(str(txn.get('sender_account', 'UNK')), 'SENDER'),
-            'receiver': get_anonymous_id(str(txn.get('receiver_account', 'UNK')), 'RECEIVER'),
-            'amount_usd': txn.get('amount', 0),
-            'risk_score': txn.get('risk_score', 0),
-            'xgb_score': txn.get('xgb_score', 0),
-            'gnn_score': txn.get('gnn_score', 0),
-            'network_factor': txn.get('network_factor', 0),
-            'tx_type': txn.get('tx_type', 'UNKNOWN'),
-            'is_structuring': txn.get('is_structuring', False),
-            'is_round_amount': txn.get('is_round_amount', False),
-            'reasoning': txn.get('reasoning', 'N/A')
-        }
-        anonymized['transactions'].append(anon_txn)
+    for idx, txn in enumerate(data.get('transactions', [])):
+        try:
+            # Handle both flat and nested structures (risk_assessment)
+            risk_data = txn.get('risk_assessment', txn)
+            transaction_data = txn.get('transaction', txn)
+            
+            anon_txn = {
+                'sender': get_anonymous_id(str(risk_data.get('sender', transaction_data.get('Sender', 'UNK'))), 'SENDER'),
+                'receiver': get_anonymous_id(str(risk_data.get('receiver', transaction_data.get('Receiver', 'UNK'))), 'RECEIVER'),
+                'amount_usd': float(risk_data.get('amount', transaction_data.get('Amount Received', transaction_data.get('Amount Paid', 0)))),
+                'risk_score': float(risk_data.get('risk_score', 0)),
+                'xgb_score': float(risk_data.get('xgb_score', 0)),
+                'gnn_score': float(risk_data.get('gnn_score', 0)),
+                'network_factor': float(risk_data.get('network_factor', 0)),
+                'tx_type': transaction_data.get('Transaction_Type', transaction_data.get('tx_type', 'UNKNOWN')),
+                'is_structuring': risk_data.get('is_structuring_risk', transaction_data.get('Is_Structuring_Risk', False)),
+                'is_round_amount': risk_data.get('is_round_amount', transaction_data.get('Is_Round_Amount', False)),
+                'reasoning': risk_data.get('reasoning', 'N/A')
+            }
+            anonymized['transactions'].append(anon_txn)
+        except Exception as e:
+            logger.warning(f"Failed to anonymize transaction {idx}: {e}. Transaction data: {txn}")
+            continue
     
     # Anonymize network nodes
     if 'nodes' in anonymized['network']:

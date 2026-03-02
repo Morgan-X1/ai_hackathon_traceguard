@@ -776,6 +776,11 @@ def gemma_deep_analysis(request):
                 'message': 'No suspicious transactions available. Run batch analysis first.'
             }, status=400)
         
+        # Debug: Log the structure of raw_results
+        logger.info(f"Raw results count: {len(raw_results)}")
+        if raw_results:
+            logger.info(f"Sample transaction keys: {raw_results[0].keys() if raw_results else 'None'}")
+        
         # Prepare anomaly data structure
         anomaly_data = {
             'transactions': raw_results,
