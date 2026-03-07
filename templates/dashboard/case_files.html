@@ -1,0 +1,277 @@
+{% extends 'base.html' %}
+
+{% block title %}Evidence Locker - TraceGuard AI{% endblock %}
+
+{% block content %}
+<style>
+    .case-file-card {
+        background: linear-gradient(135deg, #1a1f3a 0%, #0f1419 100%);
+        border: 1px solid #00d084;
+        box-shadow: 0 0 20px rgba(0, 208, 132, 0.2);
+    }
+    
+    .classified-banner {
+        background: linear-gradient(90deg, #dc3545 0%, #ffc107 50%, #dc3545 100%);
+        color: #000;
+        font-weight: 800;
+        letter-spacing: 3px;
+        padding: 8px;
+        text-align: center;
+        animation: pulse 2s infinite;
+    }
+    
+    .risk-indicator-high {
+        color: #dc3545;
+        font-weight: 800;
+        text-shadow: 0 0 10px #dc3545;
+    }
+    
+    .risk-indicator-medium {
+        color: #ffc107;
+        font-weight: 700;
+    }
+    
+    .risk-indicator-low {
+        color: #00d084;
+        font-weight: 600;
+    }
+</style>
+
+<div class="classified-banner">
+    ⚠️ CLASSIFIED - NATIONAL SECURITY MATERIAL - AUTHORIZED PERSONNEL ONLY ⚠️
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h1 class="mb-2" style="color: #ffc107; font-weight: 800; letter-spacing: 2px;">
+                    <i class="bi bi-folder-fill"></i> EVIDENCE LOCKER
+                </h1>
+                <p class="lead mb-0" style="color: #00d084;">
+                    National Security Case Files Repository - {{ total_cases }} Active Investigations
+                </p>
+            </div>
+            <div>
+                <a href="{% url 'batch_analysis' %}" class="btn btn-danger" style="font-weight: 600;">
+                    <i class="bi bi-plus-circle-fill"></i> NEW INVESTIGATION
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Statistics Cards -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card case-file-card">
+            <div class="card-body text-center">
+                <h3 class="text-danger" style="font-size: 3rem; font-weight: 800;">{{ critical_cases }}</h3>
+                <p class="text-uppercase" style="color: #dc3545; font-weight: 700; letter-spacing: 1px;">Critical Threat Cases</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card case-file-card">
+            <div class="card-body text-center">
+                <h3 class="text-warning" style="font-size: 3rem; font-weight: 800;">{{ ongoing_cases }}</h3>
+                <p class="text-uppercase" style="color: #ffc107; font-weight: 700; letter-spacing: 1px;">Ongoing Investigations</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card case-file-card">
+            <div class="card-body text-center">
+                <h3 class="text-success" style="font-size: 3rem; font-weight: 800;">{{ total_cases }}</h3>
+                <p class="text-uppercase" style="color: #00d084; font-weight: 700; letter-spacing: 1px;">Total Case Files</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Investigation Records Table -->
+<div class="card case-file-card mb-4">
+    <div class="card-header" style="background: rgba(220, 53, 69, 0.2); border-bottom: 2px solid #dc3545;">
+        <h4 class="mb-0" style="color: #ffc107; font-weight: 700; letter-spacing: 1px;">
+            <i class="bi bi-file-earmark-lock-fill"></i> ACTIVE INVESTIGATION RECORDS
+        </h4>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover" style="border: 1px solid #00d084;">
+                <thead style="background: rgba(0, 208, 132, 0.1); border-bottom: 2px solid #00d084;">
+                    <tr>
+                        <th style="color: #ffc107; font-weight: 700;">CASE ID</th>
+                        <th style="color: #ffc107; font-weight: 700;">ACCOUNT FLAGGED</th>
+                        <th style="color: #ffc107; font-weight: 700;">RISK LEVEL</th>
+                        <th style="color: #ffc107; font-weight: 700;">THREAT SCORE</th>
+                        <th style="color: #ffc107; font-weight: 700;">STATUS</th>
+                        <th style="color: #ffc107; font-weight: 700;">TYPOLOGIES</th>
+                        <th style="color: #ffc107; font-weight: 700;">TIMESTAMP</th>
+                        <th style="color: #ffc107; font-weight: 700;">ACTIONS</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for record in case_records %}
+                    <tr>
+                        <td>
+                            <code style="color: #00d084; font-weight: 600;">
+                                {{ record.case_reference|default:"N/A" }}
+                            </code>
+                        </td>
+                        <td>
+                            <strong style="color: #ffffff;">{{ record.target_account }}</strong>
+                        </td>
+                        <td>
+                            {% if record.risk_score >= 75 %}
+                            <span class="badge bg-danger" style="font-size: 0.9rem; padding: 8px 12px; letter-spacing: 1px;">
+                                🔴 CRITICAL
+                            </span>
+                            {% elif record.risk_score >= 50 %}
+                            <span class="badge bg-warning" style="font-size: 0.9rem; padding: 8px 12px; letter-spacing: 1px;">
+                                ⚠️ HIGH
+                            </span>
+                            {% elif record.risk_score >= 25 %}
+                            <span class="badge bg-info" style="font-size: 0.9rem; padding: 8px 12px; letter-spacing: 1px;">
+                                🟡 MEDIUM
+                            </span>
+                            {% else %}
+                            <span class="badge bg-success" style="font-size: 0.9rem; padding: 8px 12px; letter-spacing: 1px;">
+                                🟢 LOW
+                            </span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if record.risk_score >= 75 %}
+                            <strong class="risk-indicator-high">{{ record.risk_score|floatformat:0 }}</strong>
+                            {% elif record.risk_score >= 50 %}
+                            <strong class="risk-indicator-medium">{{ record.risk_score|floatformat:0 }}</strong>
+                            {% else %}
+                            <strong class="risk-indicator-low">{{ record.risk_score|floatformat:0 }}</strong>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if record.investigation_status == 'ONGOING' %}
+                            <span class="badge bg-primary">🔍 ONGOING</span>
+                            {% elif record.investigation_status == 'COMPLETED' %}
+                            <span class="badge bg-success">✅ COMPLETED</span>
+                            {% elif record.investigation_status == 'ESCALATED' %}
+                            <span class="badge bg-danger">🚨 ESCALATED</span>
+                            {% else %}
+                            <span class="badge bg-secondary">📁 CLOSED</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <small>
+                                {% for typology in record.typologies_identified %}
+                                <span class="badge bg-warning me-1" style="font-size: 0.7rem;">{{ typology }}</span>
+                                {% endfor %}
+                            </small>
+                        </td>
+                        <td>
+                            <small style="color: #9aa0a6;">{{ record.created_at|date:"Y-m-d H:i" }}</small>
+                        </td>
+                        <td>
+                            {% if record.report_generated %}
+                            <button class="btn btn-sm btn-success" onclick="downloadReport('{{ record.case_reference }}')" title="Download PDF Report">
+                                <i class="bi bi-file-earmark-arrow-down-fill"></i> PDF
+                            </button>
+                            {% else %}
+                            <button class="btn btn-sm btn-outline-secondary" disabled title="Report not generated">
+                                <i class="bi bi-file-earmark-x"></i> N/A
+                            </button>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" class="text-center text-secondary py-4">
+                            <i class="bi bi-folder-x" style="font-size: 3rem;"></i>
+                            <p class="mt-2">No case files found. Start a new investigation.</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Forensic Reports Table -->
+<div class="card case-file-card">
+    <div class="card-header" style="background: rgba(255, 193, 7, 0.2); border-bottom: 2px solid #ffc107;">
+        <h4 class="mb-0" style="color: #00d084; font-weight: 700; letter-spacing: 1px;">
+            <i class="bi bi-file-earmark-medical-fill"></i> GEMMA FORENSIC DOSSIERS
+        </h4>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover" style="border: 1px solid #ffc107;">
+                <thead style="background: rgba(255, 193, 7, 0.1); border-bottom: 2px solid #ffc107;">
+                    <tr>
+                        <th style="color: #00d084; font-weight: 700;">DOSSIER ID</th>
+                        <th style="color: #00d084; font-weight: 700;">LEAD INVESTIGATOR</th>
+                        <th style="color: #00d084; font-weight: 700;">TRANSACTIONS</th>
+                        <th style="color: #00d084; font-weight: 700;">VOLUME (USD)</th>
+                        <th style="color: #00d084; font-weight: 700;">THREAT LEVEL</th>
+                        <th style="color: #00d084; font-weight: 700;">TIMESTAMP</th>
+                        <th style="color: #00d084; font-weight: 700;">DOWNLOAD</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in forensic_logs %}
+                    <tr>
+                        <td>
+                            <code style="color: #ffc107; font-weight: 600;">{{ log.case_id }}</code>
+                        </td>
+                        <td>
+                            <strong style="color: #ffffff;">{{ log.officer_name }}</strong>
+                            <small style="color: #9aa0a6; display: block;">{{ log.officer_role }}</small>
+                        </td>
+                        <td>
+                            <span class="badge bg-info">{{ log.total_transactions_analyzed }}</span>
+                        </td>
+                        <td>
+                            <strong style="color: #00d084;">${{ log.total_volume_usd|floatformat:2 }}</strong>
+                        </td>
+                        <td>
+                            {% if log.critical_risk_count >= 5 %}
+                            <span class="badge bg-danger" style="font-size: 0.9rem;">🔴 CRITICAL ({{ log.critical_risk_count }})</span>
+                            {% elif log.critical_risk_count >= 3 %}
+                            <span class="badge bg-warning" style="font-size: 0.9rem;">⚠️ HIGH ({{ log.critical_risk_count }})</span>
+                            {% else %}
+                            <span class="badge bg-success" style="font-size: 0.9rem;">✅ LOW ({{ log.critical_risk_count }})</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <small style="color: #9aa0a6;">{{ log.timestamp|date:"Y-m-d H:i" }}</small>
+                        </td>
+                        <td>
+                            <a href="{% url 'export_forensic_pdf' log.case_id %}" class="btn btn-sm btn-danger" title="Download Forensic Dossier">
+                                <i class="bi bi-file-earmark-pdf-fill"></i> PDF
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center text-secondary py-4">
+                            <i class="bi bi-file-earmark-x" style="font-size: 3rem;"></i>
+                            <p class="mt-2">No forensic dossiers generated yet.</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+function downloadReport(caseRef) {
+    // Placeholder for PDF download functionality
+    alert('Downloading report for case: ' + caseRef);
+    // In production, this would trigger a PDF download
+}
+</script>
+
+{% endblock %}

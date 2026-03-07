@@ -253,19 +253,40 @@
     {% block extra_css %}{% endblock %}
 </head>
 <body>
-    <!-- Navigation -->
-    <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
-        <div class="container">
-            <a class="navbar-brand" href="{% url 'dashboard' %}">
-                <i class="bi bi-shield-check"></i> TraceGuard AI
+    <!-- COMMAND CENTER Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark sticky-top" style="background: linear-gradient(135deg, #0a1628 0%, #1a2332 100%) !important; border-bottom: 2px solid #00d084; box-shadow: 0 4px 20px rgba(0,0,0,0.5);">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="{% url 'dashboard' %}" style="font-weight: 800; font-size: 1.6rem; letter-spacing: 1px;">
+                <i class="bi bi-shield-fill text-danger"></i> 
+                <span style="color: #00d084;">TraceGuard AI</span> 
+                <span class="text-danger">|</span> 
+                <span style="color: #ffc107; font-size: 0.9rem; font-weight: 600;">National Security Interface</span>
             </a>
             {% if user.is_authenticated %}
-            <span class="navbar-text text-success me-auto ms-3">
-                <i class="bi bi-person-circle"></i> <strong>{{ user.get_full_name|default:user.username }}</strong>
+            <span class="navbar-text me-auto ms-4" style="background: rgba(220, 53, 69, 0.15); padding: 8px 16px; border-radius: 8px; border-left: 3px solid #dc3545;">
+                <i class="bi bi-person-badge-fill text-danger"></i> 
+                <strong style="color: #ffc107;">SENIOR ANALYST:</strong> 
+                <strong style="color: #00d084;">{{ user.get_full_name|default:user.username|upper }}</strong>
                 {% if user.is_staff %}
-                <span class="badge bg-success ms-2">Officer</span>
+                <span class="badge bg-danger ms-2" style="font-size: 0.75rem; letter-spacing: 0.5px;">AUTHORIZED</span>
                 {% endif %}
             </span>
+            
+            <!-- System Status Indicators -->
+            <div class="d-none d-lg-flex align-items-center me-3" style="gap: 15px;">
+                <div class="system-status" style="display: flex; align-items: center; gap: 5px;">
+                    <div style="width: 8px; height: 8px; background: #00d084; border-radius: 50%; box-shadow: 0 0 10px #00d084; animation: pulse 2s infinite;"></div>
+                    <small style="color: #00d084; font-weight: 600; font-size: 0.75rem;">GNN: ACTIVE</small>
+                </div>
+                <div class="system-status" style="display: flex; align-items: center; gap: 5px;">
+                    <div style="width: 8px; height: 8px; background: #00d084; border-radius: 50%; box-shadow: 0 0 10px #00d084; animation: pulse 2s infinite;"></div>
+                    <small style="color: #00d084; font-weight: 600; font-size: 0.75rem;">LLM: CONNECTED</small>
+                </div>
+                <div class="system-status" style="display: flex; align-items: center; gap: 5px;">
+                    <div style="width: 8px; height: 8px; background: #ffc107; border-radius: 50%; box-shadow: 0 0 10px #ffc107; animation: pulse 2s infinite;"></div>
+                    <small style="color: #ffc107; font-weight: 600; font-size: 0.75rem;">ENCRYPTED</small>
+                </div>
+            </div>
             {% endif %}
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
@@ -280,6 +301,11 @@
                     <li class="nav-item">
                         <a class="nav-link" href="{% url 'batch_analysis' %}">
                             <i class="bi bi-list-check"></i> Batch Analysis
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'case_files' %}">
+                            <i class="bi bi-folder-fill text-warning"></i> Case Files
                         </a>
                     </li>
                     <li class="nav-item">

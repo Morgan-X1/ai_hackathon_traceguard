@@ -59,6 +59,33 @@
 </div>
 {% endif %}
 
+<!-- Live Audit Feed - System Activity Monitor -->
+{% if user.is_authenticated and user.is_staff %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card" style="background: linear-gradient(135deg, #1a1f3a 0%, #0f1419 100%); border: 1px solid #dc3545; box-shadow: 0 0 20px rgba(220, 53, 69, 0.3);">
+            <div class="card-header" style="background: rgba(220, 53, 69, 0.2); border-bottom: 2px solid #dc3545;">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0" style="color: #ffc107; font-weight: 700; letter-spacing: 1px;">
+                        <i class="bi bi-activity"></i> LIVE SYSTEM ACTIVITY FEED
+                        <span class="badge bg-danger ms-2" style="animation: pulse 2s infinite;">REAL-TIME</span>
+                    </h5>
+                    <small style="color: #00d084;">Auto-refresh: 10s</small>
+                </div>
+            </div>
+            <div class="card-body" style="max-height: 300px; overflow-y: auto;" id="auditFeedContainer">
+                <div class="text-center">
+                    <div class="spinner-border spinner-border-sm text-danger" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <span class="text-muted ms-2">Loading system activity feed...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <div class="row">
     <!-- Transaction Form -->
     <div class="col-lg-{% if show_results %}6{% else %}8{% endif %} mx-auto">
@@ -475,6 +502,54 @@ function viewInvestigation(accountId, event) {
     event.preventDefault();
     alert(`Viewing investigation for account: ${accountId}\n\nFeature: Load full investigation details`);
     // TODO: Implement full investigation view modal
+}
+{% endif %}
+
+// Live Audit Feed - Real-time System Activity Monitor
+{% if user.is_authenticated %}
+let auditFeedAutoRefresh;
+
+function loadAuditFeed() {
+    fetch('/api/live-audit-feed/')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                displayAuditFeed(data.feed);
+            }
+        })
+        .catch(error => {
+            console.error('Failed to load audit feed:', error);
+        });
+}
+
+function displayAuditFeed(feed) {
+    const container = document.getElementById('auditFeedContainer');
+    if (!container) return;
+    
+    let html = '';
+    feed.forEach(entry => {
+        const statusIcon = entry.success ? '✅' : '❌';
+        html += `
+            <div class="audit-entry" style="padding: 8px 12px; border-left: 3px solid ${entry.success ? '#00d084' : '#dc3545'}; margin-bottom: 8px; background: rgba(0,0,0,0.2); border-radius: 4px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: ${entry.success ? '#00d084' : '#dc3545'};">
+                        <strong>[${entry.timestamp}]</strong> ${entry.message}
+                    </span>
+                    <span style="font-size: 1.2rem;">${statusIcon}</span>
+                </div>
+            </div>
+        `;
+    });
+    container.innerHTML = html;
+    
+    // Auto-scroll to top for newest entries
+    container.scrollTop = 0;
+}
+
+// Load audit feed on page load and refresh every 10 seconds
+if (document.getElementById('auditFeedContainer')) {
+    loadAuditFeed();
+    auditFeedAutoRefresh = setInterval(loadAuditFeed, 10000); // Refresh every 10 seconds
 }
 {% endif %}
 </script>
